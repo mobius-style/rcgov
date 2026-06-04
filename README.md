@@ -24,17 +24,25 @@ low-provenance claims.
 
 ## Status
 
-**Pre-alpha / Personal MVP scaffold.** This repository currently contains:
+**Pre-alpha / Personal MVP.** The full governance pipeline runs end-to-end:
+`rcgov govern` ingests files and emits every contract artifact. Implemented:
 
-- the **data contract** layer (`src/rcgov/contract/`) — fully implemented,
-  strictly conformant to *Minimal Data Contract v0.1*;
-- a **pipeline skeleton** with honest stubs for each stage (ingest → segment →
-  scan → propose → gates → priority → pack);
+- the **data contract** layer (`src/rcgov/contract/`), strictly conformant to
+  *Minimal Data Contract v0.1*;
+- **ingest** (encoding repair + content-addressed store), **segment**
+  (markdown heading-aware, provenance-preserving), **scan**
+  (regex+entropy secrets, imperative prompt-injection seeds), **propose**
+  (transparent low-confidence keyword heuristics), **provenance**, the
+  **non-compensatory gate** layer, **priority** (lexical TF-cosine), **conflict
+  detection** (drift detectors routed via friction governance), and **pack**
+  rendering;
 - the canonical **papers** under `docs/`.
 
-Detection logic (secret/prompt-injection scanning, relevance scoring, friction
-calibration) is stubbed with clear `NotImplementedError` / `TODO` markers — see
-the roadmap in [`docs/spec_v0_4.md`](docs/spec_v0_4.md) §16.
+Model-independent by design (Decision Record 4): the ME5 embedding path is an
+opt-in *upgrade* of relevance scoring, not a dependency. Authority/temporal
+proposals are deliberately low-confidence and surfaced for review — RCGov's
+thesis is to surface disagreement, not to trust automatic authority
+classification.
 
 ## Architecture (robust core first)
 
@@ -72,8 +80,17 @@ before scoring.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # contract-layer tests should be green
+pytest                      # tests should be green
+
+# Dogfooding: govern RCGov's own documentation into a clean pack
+rcgov govern docs/paper_v0_7.md docs/spec_v0_4.md docs/minimal_data_contract_v0_1.md \
+  --task "Audit RCGov's own docs for drift" --out out
+ls out/   # CLEAN_CONTEXT_PACK.md, NON_INJECTION_REPORT.md, CONFLICT_MAP.md, …
 ```
+
+The dogfooding run quarantines the one section of the spec that lists prompt-
+injection example phrases (§6.2) — RCGov declines to inject its own injection
+examples — and confirms the code enums are in sync with the contract document.
 
 ## Design decisions
 
