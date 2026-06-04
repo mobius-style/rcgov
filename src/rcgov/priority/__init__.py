@@ -14,7 +14,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["PriorityComponents", "WEIGHTS", "priority_score"]
+__all__ = [
+    "PriorityComponents", "WEIGHTS", "priority_score", "score_segment",
+    "relevance", "task_proximity", "compression_integrity", "injection_fitness",
+]
 
 # Contract-fixed weights (contract §9). Sum = 1.0.
 WEIGHTS = {
@@ -51,19 +54,57 @@ def priority_score(c: PriorityComponents) -> float:
     )
 
 
-# --- component scorers (stubs) --------------------------------------------
+# --- component scorers ------------------------------------------------------
+# Model-independent lexical implementations (Decision Record 4). The ME5
+# embedding path is an experimental *upgrade* of ``relevance`` / ``task_proximity``,
+# enabled via the ``embed`` extra; the robust core runs without it.
+
 def relevance(segment_text: str, task: str) -> float:
-    """ME5 cosine relevance of segment to the current task. Experimental path."""
-    raise NotImplementedError("relevance: ME5 'query: ' embedding cosine")
+    """Relevance of a segment to the current task — lexical TF cosine.
+
+    Upgrade path: replace with ME5 'query: ' embedding cosine (``embed`` extra).
+    """
+    from ..textutils import cosine
+
+    return cosine(segment_text, task) if task.strip() else 0.5
 
 
-def task_proximity(segment_text: str, task: str) -> float:
-    raise NotImplementedError("task_proximity: heading/section distance to task")
+def task_proximity(segment_text: str, task: str, heading_path: list[str] | None = None) -> float:
+    """How close the segment's heading context sits to the task vocabulary."""
+    from ..textutils import jaccard
+
+    heading = " ".join(heading_path or [])
+    if not task.strip():
+        return 0.5
+    return jaccard(heading or segment_text, task)
 
 
 def compression_integrity(segment_text: str) -> float:
-    raise NotImplementedError("compression_integrity: survives summarization?")
+    """Heuristic: mid-length, prose-heavy segments survive summarization best.
+
+    Very short fragments and very long dumps both score lower.
+    """
+    n = len(segment_text)
+    if n < 40:
+        return 0.3
+    if n > 4000:
+        return 0.5
+    return 1.0
 
 
 def injection_fitness(segment_text: str) -> float:
-    raise NotImplementedError("injection_fitness: clean, self-contained for a pack?")
+    """Heuristic: penalize segments dominated by code fences / tables, which are
+    awkward to splice cleanly into a prose context pack."""
+    lines = segment_text.splitlines() or [""]
+    noisy = sum(1 for ln in lines if ln.lstrip().startswith(("```", "|", "    ")))
+    return max(0.0, 1.0 - noisy / max(1, len(lines)))
+
+
+def score_segment(segment_text: str, task: str, heading_path: list[str] | None = None) -> float:
+    """Convenience: compute all components and combine them."""
+    return priority_score(PriorityComponents(
+        relevance=relevance(segment_text, task),
+        task_proximity=task_proximity(segment_text, task, heading_path),
+        compression_integrity=compression_integrity(segment_text),
+        injection_fitness=injection_fitness(segment_text),
+    ))

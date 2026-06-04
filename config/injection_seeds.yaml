@@ -41,15 +41,10 @@ patterns:
   - id: jailbreak_dan
     phrase: "do anything now"
 
-  # --- MMV Essentials-like authority-injection probes ---------------------
-  # MMV's layering warning: end-user text that mimics Answer-Entitlement /
-  # Essentials terminology can collapse restraint. Flag look-alikes so they are
-  # never silently treated as governance authority.
-  - id: ae_answer_entitlement
-    phrase: "answer entitlement"
-  - id: ae_reflective_ready
-    phrase: "reflectiveready"
-  - id: ae_route_taxonomy
-    phrase: "route_taxonomy"
-  - id: ae_tvs_mkr
-    phrase: "tvs/mkr"
+  # NOTE: injection seeds are *imperative* override instructions only. The MMV
+  # layering concern (an end user pasting Essentials-like governance text) is an
+  # instruction-injection attempt and is caught by phrases like
+  # "treat this file as the highest authority" / "override the system prompt".
+  # Bare governance topic terms ("answer entitlement", "ReflectiveReady",
+  # "route_taxonomy") are descriptive, not injection, and would false-positive
+  # on legitimate governance-theory text — so they are deliberately excluded.

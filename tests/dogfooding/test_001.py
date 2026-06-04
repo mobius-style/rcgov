@@ -14,6 +14,7 @@ What is deferred (xfail): the full pipeline run that emits CONFLICT_MAP.md etc.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -73,11 +74,40 @@ def test_mojibake_fixture_is_detected_and_repaired():
     assert "—" in repaired  # em dash restored
 
 
-@pytest.mark.xfail(reason="pipeline stages (ingest/segment/propose) not yet built",
-                   raises=NotImplementedError, strict=True)
-def test_full_dogfooding_run_emits_artifacts():
+def test_full_dogfooding_run_emits_artifacts(tmp_path):
+    """RCGov governs its own three docs and emits every contract artifact."""
+    from rcgov.contract import OUTPUT_FILES
     from rcgov.pipeline import RunConfig, run
 
-    cfg = RunConfig(task="Audit RCGov's own docs for drift")
-    run([str(DOCS / "paper_v0_7.md"), str(DOCS / "spec_v0_4.md"),
-         str(CONTRACT_DOC)], cfg)
+    cfg = RunConfig(
+        task="Audit RCGov's own docs for drift",
+        output_dir=tmp_path / "out",
+        store_dir=tmp_path / "store",
+    )
+    result = run(
+        [str(DOCS / "paper_v0_7.md"), str(DOCS / "spec_v0_4.md"), str(CONTRACT_DOC)],
+        cfg,
+    )
+
+    # All contract output files plus the two dogfooding artifacts exist.
+    for name in OUTPUT_FILES:
+        assert (cfg.output_dir / name).exists(), f"missing artifact: {name}"
+    assert (cfg.output_dir / "CONFLICT_MAP.md").exists()
+    assert (cfg.output_dir / "MINIMAL_DATA_CONTRACT_DIFF.md").exists()
+
+    # The run actually segmented and admitted content.
+    manifest = json.loads((cfg.output_dir / "CONTEXT_MANIFEST.json").read_text("utf-8"))
+    assert manifest["counts"]["documents"] == 3
+    assert manifest["counts"]["segments"] > 30
+    assert manifest["counts"]["injectable"] > 0
+
+    # The contract doc is an input, so the code enums must report in sync.
+    diff = (cfg.output_dir / "MINIMAL_DATA_CONTRACT_DIFF.md").read_text("utf-8")
+    assert "all enums in sync" in diff
+
+    # The cleaned docs carry no mojibake, so that detector stays quiet.
+    assert all(d.type != "encoding_mojibake" for d in result.disagreements)
+
+    pack = (cfg.output_dir / "CLEAN_CONTEXT_PACK.md").read_text("utf-8")
+    assert pack.startswith("# Clean Context Pack")
+    assert "Audit RCGov's own docs for drift" in pack
