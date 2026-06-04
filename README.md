@@ -109,6 +109,6 @@ borrowed asset is a seed list of prompt-injection patterns
 - **Source code** (`src/`, `app/`, `tests/`, `config/`, build files):
   **AGPL-3.0-or-later** — see [`LICENSE`](LICENSE).
 - **Paper / specification text** (`docs/`): **CC BY-NC-SA 4.0** — see
-  [`LICENSE-docs`](LICENSE-docs).
+  [`docs/LICENSE-CC-BY-NC-SA.txt`](docs/LICENSE-CC-BY-NC-SA.txt).
 
 Rights holder: MOBIUS.LLC / Taiko Toeda.
