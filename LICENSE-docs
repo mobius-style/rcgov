@@ -1,0 +1,44 @@
+Documentation License — Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
+
+This license applies to the PAPER AND SPECIFICATION TEXT in this repository,
+specifically the contents of the docs/ directory:
+
+    docs/paper_v0_7.md
+    docs/spec_v0_4.md
+    docs/minimal_data_contract_v0_1.md
+    docs/DECISION_RECORD.md
+
+Copyright (c) MOBIUS.LLC / Taiko Toeda.
+
+The prose, figures, tables, and conceptual schemas in these documents are
+licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International License. To view a copy of this license, visit:
+
+    https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+You are free to:
+  - Share — copy and redistribute the material in any medium or format.
+  - Adapt — remix, transform, and build upon the material.
+
+Under the following terms:
+  - Attribution — You must give appropriate credit to MOBIUS.LLC / Taiko Toeda.
+  - NonCommercial — You may not use the material for commercial purposes.
+  - ShareAlike — If you remix or build upon the material, you must distribute
+    your contributions under the same license as the original.
+
+----------------------------------------------------------------------
+
+NOTE ON SCOPE
+
+  - SOURCE CODE (everything under src/, app/, tests/, config/, and the build
+    files) is licensed under AGPL-3.0-or-later. See the LICENSE file.
+
+  - The reduced data contract — enum value sets and object field names defined
+    in docs/minimal_data_contract_v0_1.md and mirrored in
+    src/rcgov/contract/ — is an interface intended for interoperability. Its
+    code expression in src/rcgov/contract/ is AGPL-3.0-or-later like the rest of
+    the source; the prose definition in docs/ is CC BY-NC-SA 4.0.
+
+  - These two licenses are independent. The NonCommercial term restricts reuse
+    of the PAPER TEXT; it does not restrict use, modification, or sale of the
+    SOFTWARE, which is governed solely by AGPL-3.0-or-later.

@@ -1,0 +1,42 @@
+# RCGov governance profiles
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) MOBIUS.LLC / Taiko Toeda
+#
+# Profiles tune post-gate behaviour only. They NEVER weaken non-compensatory
+# gates: a profile cannot turn a quarantine into an inject (spec §14.3).
+
+profiles:
+  Conservative:
+    description: "more foreground warnings, less pruning"
+    foreground_threshold: 0.45
+    digest_threshold: 0.20
+    prune_background: false
+
+  Balanced:
+    description: "default personal mode"
+    foreground_threshold: 0.60
+    digest_threshold: 0.30
+    prune_background: true
+
+  Aggressive:
+    description: "stronger compression after gates"
+    foreground_threshold: 0.75
+    digest_threshold: 0.45
+    prune_background: true
+
+  Research:
+    description: "preserve hypotheses and disagreements for review"
+    foreground_threshold: 0.55
+    digest_threshold: 0.25
+    prune_background: false
+    preserve_hypotheses: true
+    preserve_disagreements: true
+
+# Experimental temporal-attention placement (paper §3.4). Opt-in, must be
+# ablated against a non-temporal attention-optimal baseline before any claim.
+temporal_attention:
+  enabled_by_default: false
+  durable_zone: "front"
+  current_zone: "attention_tail"
+  temporary_zone: "task_relevant_only"
+  deprecated_zone: "non_injection_report"

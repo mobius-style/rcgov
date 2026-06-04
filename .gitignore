@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual envs
+.venv/
+venv*/
+env/
+
+# RCGov local store (content-addressed segment text, never committed)
+.rcgov_store/
+*.rcgov.sqlite
+
+# RCGov run outputs (regenerated per run; not source of truth)
+out/
+CLEAN_CONTEXT_PACK.md
+NON_INJECTION_REPORT.md
+CONFLICT_MAP.md
+MINIMAL_DATA_CONTRACT_DIFF.md
+AUTHORITY_REVIEW_QUEUE.jsonl
+OVERRIDE_LOG.jsonl
+DOWNSTREAM_OUTCOME_LOG.jsonl
+CONTEXT_MANIFEST.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
