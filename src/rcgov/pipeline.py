@@ -21,11 +21,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .contract import (
+    AuthorityState,
     GovernedSegment,
     GateResult,
     InjectionDecision,
     SegmentRole,
 )
+from .commit import load_commitments, STABILIZATION_MESSAGE
 from .conflict import detect_conflicts, DETECTOR_NAMES
 from .gates import GateInputs, run_gates
 from .ingest import ingest_file
@@ -58,6 +60,7 @@ class RunConfig:
     output_dir: Path = field(default_factory=lambda: Path("out"))
     store_dir: Path = field(default_factory=lambda: Path(".rcgov_store"))
     injection_seeds_path: Path | None = Path("config/injection_seeds.yaml")
+    commitments_path: Path | None = Path("config/commitments.yaml")
 
 
 @dataclass
@@ -77,24 +80,32 @@ def _now() -> str:
 
 def _govern_one(rec: Governed, *, requests_injection: bool) -> GovernedSegment:
     """Run scan-driven + structural gates for one record, returning the
-    contract GovernedSegment with its injection decision and priority."""
+    contract GovernedSegment with its injection decision and priority.
+
+    Honors any committed authority resolved from the commitment manifest: a
+    committed segment satisfies the Authority Commitment Gate and is placed by
+    its committed (effective) authority.
+    """
     outcome = run_gates(GateInputs(
         has_secret=bool(rec.secret_findings),
         has_injection=bool(rec.injection_findings),
         provenance_meets_minimum=meets_minimum(rec.provenance),
         requests_injection=requests_injection,
-        authority_proposed=rec.authority,
-        authority_committed=None,  # nothing is committed in an unattended run
+        authority_proposed=rec.effective_authority,
+        authority_committed=rec.committed,
     ))
     # Deprecated material is never injected even if otherwise clean.
     decision = outcome.injection_decision
-    if rec.authority.value == "deprecated_or_unauthorized" and decision == InjectionDecision.INJECT:
+    if rec.effective_authority == AuthorityState.DEPRECATED_OR_UNAUTHORIZED \
+            and decision == InjectionDecision.INJECT:
         decision = InjectionDecision.ARCHIVE
     role = SegmentRole.SECRET_OR_RISK if rec.secret_findings else rec.role
     return GovernedSegment(
         segment_id=rec.segment.segment_id,
         role_proposed=role,
         authority_proposed=rec.authority,
+        authority_committed=rec.committed,
+        commitment_source=rec.commitment_source,
         temporal_stratum_proposed=rec.temporal,
         provenance_quality=rec.provenance,
         safety_status="fail" if rec.secret_findings else "pass",
@@ -108,6 +119,7 @@ def run(input_files: list[str | Path], config: RunConfig) -> GovernanceRun:
     """Execute the full pipeline over ``input_files`` and emit artifacts."""
     store = TextStore(config.store_dir)
     seeds = load_seeds(config.injection_seeds_path)
+    commitments = load_commitments(config.commitments_path)
     ingested_at = _now()
 
     governed: list[Governed] = []
@@ -133,6 +145,7 @@ def run(input_files: list[str | Path], config: RunConfig) -> GovernanceRun:
         for seg in segment_document(res.document, res.clean_text, store):
             text = store.get(seg.text_ref)
             authority, conf = propose_authority(seg, text)
+            committed, commit_src = commitments.resolve(res.document, seg)
             rec = Governed(
                 document=res.document,
                 segment=seg,
@@ -144,6 +157,8 @@ def run(input_files: list[str | Path], config: RunConfig) -> GovernanceRun:
                 provenance=appraise_provenance(seg, source_path=res.document.source_path),
                 secret_findings=scan_secrets(text),
                 injection_findings=scan_injection(text, seeds),
+                committed=committed,
+                commitment_source=commit_src,
             )
             rec.governed = _govern_one(rec, requests_injection=True)
             if rec.injectable:
@@ -153,6 +168,23 @@ def run(input_files: list[str | Path], config: RunConfig) -> GovernanceRun:
             governed.append(rec)
 
     disagreements = detect_conflicts(governed, mojibake_docs)
+
+    # Authority Stabilization Mode (spec §11): count proposed-canonical segments
+    # that had no commitment and were therefore foregrounded for review. A high
+    # count means the project lacks a stable authority baseline.
+    uncommitted_canonical = sum(
+        1 for r in governed
+        if r.authority == AuthorityState.CANONICAL and r.committed is None
+        and r.governed is not None
+        and r.governed.gate_result == GateResult.FOREGROUND_WARN
+    )
+    committed_count = sum(1 for r in governed if r.committed is not None)
+    stabilization = {
+        "recommended": uncommitted_canonical > 0 and committed_count == 0,
+        "uncommitted_canonical": uncommitted_canonical,
+        "committed_segments": committed_count,
+        "message": STABILIZATION_MESSAGE if uncommitted_canonical > 0 and committed_count == 0 else None,
+    }
 
     # --- emit artifacts ----------------------------------------------------
     out = config.output_dir
@@ -193,13 +225,19 @@ def run(input_files: list[str | Path], config: RunConfig) -> GovernanceRun:
         inputs_meta, governed, disagreements, DETECTOR_NAMES,
         artifacts=sorted(artifacts.keys()) + ["CONTEXT_MANIFEST.json"],
         task=config.task, profile=config.profile,
-        temporal_attention=config.temporal_attention))
+        temporal_attention=config.temporal_attention,
+        stabilization=stabilization))
 
     injectable = sum(1 for r in governed if r.injectable)
     summary = (
         f"{len(governed)} segments from {len(inputs_meta)} documents · "
-        f"{injectable} injectable · {len(review)} for review · "
-        f"{len(disagreements)} disagreements"
+        f"{injectable} injectable · {committed_count} committed · "
+        f"{len(review)} for review · {len(disagreements)} disagreements"
     )
+    if stabilization["recommended"]:
+        summary += (
+            f" · ⚠ authority stabilization recommended "
+            f"({uncommitted_canonical} uncommitted canonical)"
+        )
     return GovernanceRun(config=config, artifacts=artifacts, governed=governed,
                          disagreements=disagreements, summary=summary)

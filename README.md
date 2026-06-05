@@ -92,6 +92,32 @@ The dogfooding run quarantines the one section of the spec that lists prompt-
 injection example phrases (§6.2) — RCGov declines to inject its own injection
 examples — and confirms the code enums are in sync with the contract document.
 
+## Authority commitment
+
+A *proposed* authority label never binds on its own (contract §5 rule 1). In an
+unattended run, a segment proposed **canonical but uncommitted** is foregrounded
+for review rather than injected — so the clean pack stays empty of canonical
+material until a baseline is committed. That commitment is the user's
+"smallest anchor set" (Authority Stabilization Mode, spec §11), declared in a
+small manifest:
+
+```yaml
+# config/commitments.yaml
+commitments:
+  - source_match: "minimal_data_contract"   # this doc is the binding baseline
+    authority: canonical
+    commitment_source: repository_manifest
+  - heading_match: "License"
+    authority: canonical
+    commitment_source: signed_policy
+```
+
+Committed segments satisfy the Authority Commitment Gate and flow into the
+pack's *Active Canonical / Committed Context*, tagged with their commitment
+source. When canonical material is proposed but nothing is committed, the
+manifest surfaces an Authority Stabilization recommendation instead of silently
+injecting or silently dropping it.
+
 ## Design decisions
 
 See [`docs/DECISION_RECORD.md`](docs/DECISION_RECORD.md) for the locked choices

@@ -36,12 +36,19 @@ class Governed:
     provenance: str
     secret_findings: list[Any] = field(default_factory=list)
     injection_findings: list[Any] = field(default_factory=list)
+    committed: AuthorityState | None = None
+    commitment_source: str | None = None
     governed: GovernedSegment | None = None
     priority: float | None = None
 
     @property
     def title(self) -> str:
         return self.segment.heading_path[-1] if self.segment.heading_path else "(preamble)"
+
+    @property
+    def effective_authority(self) -> AuthorityState:
+        """Committed authority beats proposed (spec §4.4); else the proposal."""
+        return self.committed if self.committed is not None else self.authority
 
     @property
     def injectable(self) -> bool:

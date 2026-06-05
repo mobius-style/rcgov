@@ -30,6 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument("--temporal-attention", action="store_true",
                    help="enable the experimental temporal-attention pack profile")
+    g.add_argument("--commitments", default="config/commitments.yaml",
+                   help="authority commitment manifest (Authority Stabilization Mode)")
     g.add_argument("--out", default="out", help="output directory")
     return p
 
@@ -41,11 +43,20 @@ def main(argv: list[str] | None = None) -> int:
         print("outputs: " + ", ".join(OUTPUT_FILES))
         return 0
     if args.command == "govern":
+        from pathlib import Path
+
         from .pipeline import RunConfig, run
 
-        cfg = RunConfig(task=args.task, profile=args.profile,
-                        temporal_attention=args.temporal_attention)
-        run(args.files, cfg)  # raises NotImplementedError until stages land
+        cfg = RunConfig(
+            task=args.task, profile=args.profile,
+            temporal_attention=args.temporal_attention,
+            output_dir=Path(args.out),
+            commitments_path=Path(args.commitments) if args.commitments else None,
+        )
+        result = run(args.files, cfg)
+        print(result.summary)
+        for name in sorted(result.artifacts):
+            print(f"  {result.artifacts[name]}")
     return 0
 
 

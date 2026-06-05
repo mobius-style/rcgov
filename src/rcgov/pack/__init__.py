@@ -68,7 +68,7 @@ def _section_for(rec: Governed) -> str:
     """Map an injectable segment to its clean-pack section."""
     if rec.role == SegmentRole.CONSTRAINT:
         return "Non-Negotiable Constraints"
-    if rec.authority == AuthorityState.CANONICAL:
+    if rec.effective_authority == AuthorityState.CANONICAL:
         return "Active Canonical / Committed Context"
     if rec.role == SegmentRole.PREFERENCE:
         return "User Preferences"
@@ -119,9 +119,14 @@ def build_clean_pack(
         for r in recs:
             crumb = " › ".join(r.segment.heading_path) or "(preamble)"
             lines.append(f"### {crumb}")
+            commit_note = (
+                f" · committed={r.committed.value}({r.commitment_source})"
+                if r.committed is not None else ""
+            )
             lines.append(
-                f"<!-- {r.document.document_id} · authority={r.authority.value} · "
-                f"temporal={r.temporal.value} · priority={r.priority:.3f} -->"
+                f"<!-- {r.document.document_id} · authority={r.authority.value}"
+                f"{commit_note} · temporal={r.temporal.value} · "
+                f"priority={r.priority:.3f} -->"
             )
             lines.append(r.text.strip())
             lines.append("")
@@ -256,6 +261,7 @@ def build_manifest(
     task: str,
     profile: str,
     temporal_attention: bool,
+    stabilization: dict | None = None,
 ) -> str:
     """Render CONTEXT_MANIFEST.json."""
     quarantined = sum(1 for r in governed
@@ -272,9 +278,11 @@ def build_manifest(
             "documents": len({r.document.document_id for r in governed}),
             "segments": len(governed),
             "injectable": sum(1 for r in governed if r.injectable),
+            "committed": sum(1 for r in governed if r.committed is not None),
             "quarantined": quarantined,
             "disagreements": len(disagreements),
         },
+        "authority_stabilization": stabilization or {"recommended": False},
         "detectors_run": list(detectors_run),
         "artifacts": artifacts,
     }
