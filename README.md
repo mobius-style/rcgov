@@ -92,6 +92,19 @@ The dogfooding run quarantines the one section of the spec that lists prompt-
 injection example phrases (§6.2) — RCGov declines to inject its own injection
 examples — and confirms the code enums are in sync with the contract document.
 
+### Streamlit MVP
+
+A local UI over the same pipeline (spec §14). Upload files, describe the task,
+optionally attach a commitment manifest, and read the artifacts in-page:
+
+```bash
+pip install -e ".[ui]"
+PYTHONPATH=src streamlit run app/streamlit_app.py
+```
+
+The app logic lives in the streamlit-free `rcgov.service` layer and is covered
+by unit tests; the app itself is smoke-tested with Streamlit's `AppTest` harness.
+
 ## Authority commitment
 
 A *proposed* authority label never binds on its own (contract §5 rule 1). In an

@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) MOBIUS.LLC / Taiko Toeda
-"""RCGov Streamlit MVP — UI skeleton (spec v0.4 §14).
+"""RCGov Streamlit MVP (spec v0.4 §14).
 
-STATUS: skeleton. Renders the controls and output panes from the spec. The
-"Run governance" button calls ``rcgov.pipeline.run`` which currently raises
-NotImplementedError for un-built stages — the UI surfaces that honestly rather
-than faking a clean pack.
+A thin view over ``rcgov.service.govern_bytes`` — all logic lives in the
+streamlit-free service layer so it stays unit testable. Uploaded files are
+materialized to a scratch workdir, governed, and the real artifacts are rendered
+in the output panes.
 
-Run with:  streamlit run app/streamlit_app.py   (needs the ``ui`` extra)
+Run with:  PYTHONPATH=src streamlit run app/streamlit_app.py   (needs ``ui`` extra)
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from __future__ import annotations
 def main() -> None:
     import streamlit as st
 
-    from rcgov.contract import OUTPUT_FILES
     from rcgov.pack import PROFILES
+    from rcgov.service import govern_bytes
 
     st.set_page_config(page_title="RCGov", layout="wide")
     st.title("RCGov — Reflective Context Governor")
@@ -26,40 +26,59 @@ def main() -> None:
     with st.sidebar:
         st.header("Controls")
         files = st.file_uploader("Upload files", accept_multiple_files=True)
-        task = st.text_area("Describe current task")
+        task = st.text_area("Describe current task", value="")
         profile = st.selectbox("Profile", PROFILES, index=PROFILES.index("Balanced"))
         temporal = st.checkbox("Enable experimental temporal ordering", value=False)
+        commit_file = st.file_uploader("Commitment manifest (optional)", type=["yaml", "yml"])
         go = st.button("Run governance", type="primary")
 
-    # --- Output panes (spec §14.2) ----------------------------------------
     panes = st.tabs([
         "ContextReady summary",
         "Clean Context Pack",
         "Non-Injection Report",
+        "Conflict Map",
         "Authority Review Queue",
-        "Override Log",
         "Manifest",
     ])
 
     if not go:
         with panes[0]:
             st.info("Upload files, describe the task, then run governance.")
-            st.write("Artifacts produced:", list(OUTPUT_FILES))
         return
 
-    from rcgov.pipeline import RunConfig, run
+    if not files:
+        with panes[0]:
+            st.warning("No files uploaded.")
+        return
 
-    cfg = RunConfig(task=task or "", profile=profile, temporal_attention=temporal)
-    try:
-        result = run([f.name for f in (files or [])], cfg)
-        with panes[0]:
-            st.success(result.summary or "Run complete.")
-    except NotImplementedError as exc:
-        with panes[0]:
-            st.warning(
-                "RCGov is a pre-alpha scaffold. The governance pipeline stage "
-                f"below is not implemented yet:\n\n```\n{exc}\n```"
-            )
+    inputs = [(f.name, f.getvalue()) for f in files]
+    commitments = commit_file.getvalue() if commit_file is not None else None
+    result = govern_bytes(inputs, task, profile=profile,
+                          temporal_attention=temporal, commitments=commitments)
+
+    counts = result.manifest.get("counts", {})
+    stab = result.manifest.get("authority_stabilization", {})
+
+    with panes[0]:
+        st.success(result.summary)
+        cols = st.columns(5)
+        for col, key in zip(cols, ("segments", "injectable", "committed",
+                                   "quarantined", "disagreements")):
+            col.metric(key, counts.get(key, 0))
+        if stab.get("recommended"):
+            st.warning("**Authority Stabilization recommended.** " + (stab.get("message") or ""))
+
+    def show(pane, name: str, *, code: bool = False) -> None:
+        with pane:
+            text = result.artifacts.get(name, "_(not produced)_")
+            st.code(text) if code else st.markdown(text)
+            st.download_button(f"Download {name}", text, file_name=name)
+
+    show(panes[1], "CLEAN_CONTEXT_PACK.md")
+    show(panes[2], "NON_INJECTION_REPORT.md")
+    show(panes[3], "CONFLICT_MAP.md")
+    show(panes[4], "AUTHORITY_REVIEW_QUEUE.jsonl", code=True)
+    show(panes[5], "CONTEXT_MANIFEST.json", code=True)
 
 
 if __name__ == "__main__":
