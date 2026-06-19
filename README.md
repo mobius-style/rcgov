@@ -151,3 +151,12 @@ borrowed asset is a seed list of prompt-injection patterns
   [`docs/LICENSE-CC-BY-NC-SA.txt`](docs/LICENSE-CC-BY-NC-SA.txt).
 
 Rights holder: MOBIUS.LLC / Taiko Toeda.
+
+## Related — the Möbius program
+
+Part of the [MOBIUS](https://github.com/mobius-style) program — local-first, AGPL:
+
+- [mmv](https://github.com/mobius-style/mmv) — answer-entitlement runtime: decides *whether* answering is warranted
+- [rqa](https://github.com/mobius-style/rqa) — reflective questioning adapter: deepens *the question* when it is not
+- [rcgov](https://github.com/mobius-style/rcgov) — reflective context governor: governs *what a model may read*
+- [infinity](https://github.com/mobius-style/infinity) — composite capstone (MMV × RQA) with an OpenAI-compatible API
