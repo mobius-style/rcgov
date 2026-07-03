@@ -2,9 +2,9 @@
 # Copyright (c) MOBIUS.LLC / Taiko Toeda
 """RCGov command-line entry point (``rcgov`` console script).
 
-STATUS: skeleton. Parses arguments and reports the pinned contract version; the
-``govern`` subcommand will drive ``rcgov.pipeline.run`` once the upstream stages
-are implemented.
+``rcgov`` (no subcommand) reports the pinned contract version; ``rcgov govern``
+runs the full governance pipeline (``rcgov.pipeline.run``) end-to-end and writes
+the Clean Pack and reports to ``--out``.
 """
 from __future__ import annotations
 

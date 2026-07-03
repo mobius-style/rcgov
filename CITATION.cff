@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: "RCGov — Mobius Reflective Context Governor"
+message: "If you use this software, please cite it using the metadata below."
+type: software
+authors:
+  - family-names: Toeda
+    given-names: Taiko
+    affiliation: MOBIUS LLC
+abstract: >-
+  Local-first semantic hygiene and context governance for LLM systems:
+  govern what a model is allowed to read before it answers. Ingests raw
+  context, scans for secrets and prompt injection, proposes role/authority/
+  temporal tags, applies provenance and non-compromise gates, and emits a
+  governed Clean Pack plus audit reports.
+repository-code: "https://github.com/mobius-style/rcgov"
+url: "https://github.com/mobius-style/rcgov"
+license: AGPL-3.0-or-later
+version: 0.1.0
+keywords:
+  - context-governance
+  - semantic-hygiene
+  - prompt-injection
+  - provenance
+  - local-first

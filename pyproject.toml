@@ -21,7 +21,8 @@ classifiers = [
 ]
 
 # Robust core deps are intentionally light. Detection is model-independent:
-# secrets = regex + entropy, prompt-injection = heuristic seeds, relevance = ME5.
+# secrets = regex + entropy, prompt-injection = heuristic seeds,
+# relevance = lexical TF-cosine (ME5 embeddings are an optional extra).
 dependencies = [
   "pyyaml>=6.0",
 ]

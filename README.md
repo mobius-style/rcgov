@@ -160,3 +160,4 @@ Part of the [MOBIUS](https://github.com/mobius-style) program — local-first, A
 - [rqa](https://github.com/mobius-style/rqa) — reflective questioning adapter: deepens *the question* when it is not
 - [rcgov](https://github.com/mobius-style/rcgov) — reflective context governor: governs *what a model may read*
 - [infinity](https://github.com/mobius-style/infinity) — composite capstone (MMV × RQA) with an OpenAI-compatible API
+- [tokyo-insight](https://github.com/mobius-style/tokyo-insight) — on-demand civic-RAG engine for 東京都議会 deliberation records (engine + facts only)
