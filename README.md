@@ -152,6 +152,21 @@ borrowed asset is a seed list of prompt-injection patterns
 
 Rights holder: MOBIUS.LLC / Taiko Toeda.
 
+## Citation
+
+Two companion records document the theory and the evaluation:
+
+> Toeda, T. (2026). *Context Has Temporal Strata — Authority Disagreement,
+> Minimal Data Contracts, Friction Governance, Annales Historiography, and the
+> Mobius Reflective Context Governor.* MOBIUS LLC. DOI:
+> [10.5281/zenodo.21231386](https://doi.org/10.5281/zenodo.21231386).
+
+> Toeda, T. (2026). *Reflective Context Governance Reduces Context-Borne LLM
+> Failures — A Controlled N=120 RAW-vs-CLEAN Evaluation.* MOBIUS LLC. DOI:
+> [10.5281/zenodo.21231388](https://doi.org/10.5281/zenodo.21231388).
+
+See `CITATION.cff` for machine-readable metadata.
+
 ## Related — the Möbius program
 
 Part of the [MOBIUS](https://github.com/mobius-style) program — local-first, AGPL:
