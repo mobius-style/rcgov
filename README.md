@@ -15,12 +15,32 @@ CommitAnswer_t  => ReflectiveReady_t      # answer only when justified
 InjectContext_t => ContextReady_t         # inject only what is fit to govern
 ```
 
-## What RCGov prevents
+## What RCGov is built to catch
 
 Raw project material entering an AI system as flat, undifferentiated text:
 secrets, prompt-injection residue, stale specs, deprecated rules, contradictory
 notes, uncommitted authority, temporary tool errors, copied hallucinations, and
 low-provenance claims.
+
+### And what it does not catch
+
+The gates are non-compensatory and run before scoring, which is a real,
+checkable ordering property. Their strength against any given item is
+nevertheless exactly the recall of the scanner that flags it, and that recall is
+not measured. Concretely, these pass through:
+
+- secrets with no recognizable format or entropy signature (a short password, an
+  internal identifier that is sensitive only in context);
+- prompt injections phrased without the imperative seeds the scanner looks for —
+  a novel phrasing costs an attacker nothing;
+- stale or superseded text that carries no status marker to detect it by;
+- anything the low-confidence authority/temporal heuristics rank wrongly. These
+  are surfaced for review rather than trusted, by design.
+
+RCGov bounds *what is admitted into context under a stated policy*, and logs
+every decision so the boundary is auditable. It is not a guarantee that
+unwanted material cannot reach the model. Treat a clean pack as "no gate fired",
+not as "nothing bad is present".
 
 ## Status
 
@@ -59,9 +79,10 @@ Input Files
   -> Clean Context Pack + Non-Injection Report + Override/Outcome logs
 ```
 
-Non-compensatory means **high relevance can never compensate** for a secret, an
-unsafe instruction, missing provenance, or uncommitted authority. Gates run
-before scoring.
+Non-compensatory means **high relevance can never compensate** for a *detected*
+secret, unsafe instruction, missing provenance, or uncommitted authority. Gates
+run before scoring — that ordering is the invariant. Detection is what bounds
+it: an item the scanner does not flag is never offered to a gate at all.
 
 ### Three levels of confidence (honesty statement)
 
@@ -164,6 +185,10 @@ Two companion records document the theory and the evaluation:
 > Toeda, T. (2026). *Reflective Context Governance Reduces Context-Borne LLM
 > Failures — A Controlled N=120 RAW-vs-CLEAN Evaluation.* MOBIUS LLC. DOI:
 > [10.5281/zenodo.21231388](https://doi.org/10.5281/zenodo.21231388).
+>
+> Read with its stated scope: the benchmark is synthetic and templated, its
+> metrics are keyword-based, and it covers four Groq-hosted models. It is
+> evidence for this MVP on this benchmark — not a universal guarantee.
 
 See `CITATION.cff` for machine-readable metadata.
 
