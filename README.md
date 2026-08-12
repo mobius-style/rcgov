@@ -26,8 +26,31 @@ low-provenance claims.
 
 The gates are non-compensatory and run before scoring, which is a real,
 checkable ordering property. Their strength against any given item is
-nevertheless exactly the recall of the scanner that flags it, and that recall is
-not measured. Concretely, these pass through:
+nevertheless exactly the recall of the scanner that flags it — **and that recall
+is now measured, on our own component, and it is low for prompt injection.**
+
+| against a 26-class authored evasion corpus | classes withheld |
+|---|---:|
+| the injection seed matcher alone | **9 / 26** |
+| the full pipeline (seeds + provenance/authority gate) | **13 / 26** |
+| planted credentials, 8 pattern classes | 24 / 24 |
+
+Read that first row as the honest one: **a substring seed list is a detection
+floor, not a defence.** Half the corpus reaches the model. There is also an
+exploratory and unflattering result — on the classes the pipeline misses,
+handing the model a governed pack was associated with *higher* injection
+compliance than handing it the raw document (one artifact, p = 0.0117
+unadjusted, does not survive multiplicity correction, mechanism unidentified).
+Full method, limits and data:
+**[DOI 10.5281/zenodo.21903321](https://doi.org/10.5281/zenodo.21903321)** ·
+[artifacts](https://github.com/mobius-style/guardrail-silent-degradation).
+
+The corpus was authored to probe evasion shapes, so it is adversarial by
+construction and not a sample of real traffic; the number is a floor on a
+hostile distribution, not an expected field rate. We have not measured a field
+rate, and we have not benchmarked RCGov against dedicated guardrail products.
+
+Concretely, these pass through:
 
 - secrets with no recognizable format or entropy signature (a short password, an
   internal identifier that is sensitive only in context);
@@ -41,6 +64,15 @@ RCGov bounds *what is admitted into context under a stated policy*, and logs
 every decision so the boundary is auditable. It is not a guarantee that
 unwanted material cannot reach the model. Treat a clean pack as "no gate fired",
 not as "nothing bad is present".
+
+**If you are evaluating RCGov, evaluate it for these**: deterministic
+pre-generation removal, credential and provenance handling, an auditable
+decision log, roughly 4 ms of added latency, and — since `244bb48` — a manifest
+that reports how many rules were actually in force, so a degraded install is
+distinguishable from a healthy one. **Do not adopt it as a prompt-injection
+defence.** For that, compose it with a different mechanism class; a seed list
+is one layer of a defence in depth, and on its own it is the weakest one we
+measure.
 
 ## Status
 
@@ -182,6 +214,15 @@ Annual invoicing available at USD 5,000/year.
 
 It is a license grant, not a service: no service is performed, no data of
 yours is accessed, and nothing you run depends on our availability.
+
+**Before you buy, read what this does not do.** RCGov's injection seed matcher
+withheld 9 of 26 classes in our own published evaluation
+([DOI 10.5281/zenodo.21903321](https://doi.org/10.5281/zenodo.21903321)); it is
+a floor, not a prompt-injection defence, and the same report documents a
+configuration defect of ours that silently reduced it further until `244bb48`.
+Buy it for deterministic pre-generation filtering, credential and provenance
+handling, an auditable decision log, and coverage self-attestation — not for
+injection protection.
 
 Contact: **info@mobius.style** — licensing questions are not handled in Issues.
 
