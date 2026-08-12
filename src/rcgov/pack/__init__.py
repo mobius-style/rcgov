@@ -262,6 +262,7 @@ def build_manifest(
     profile: str,
     temporal_attention: bool,
     stabilization: dict | None = None,
+    ruleset: dict | None = None,
 ) -> str:
     """Render CONTEXT_MANIFEST.json."""
     quarantined = sum(1 for r in governed
@@ -284,6 +285,11 @@ def build_manifest(
         },
         "authority_stabilization": stabilization or {"recommended": False},
         "detectors_run": list(detectors_run),
+        # Auditable ruleset provenance. A run that silently fell back to the
+        # built-in seed floor is otherwise indistinguishable from a run with
+        # the full set — that ambiguity is what let a config-resolution bug
+        # disable injection detection unnoticed.
+        "ruleset": ruleset or {},
         "artifacts": artifacts,
     }
     return json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"

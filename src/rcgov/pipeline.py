@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+
+from .config_paths import resolve_config
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,7 +45,7 @@ from .propose import propose_authority, propose_role, propose_temporal
 from .provenance import appraise_provenance, meets_minimum
 from .records import Governed
 from .scan import scan_injection, scan_secrets
-from .scan.injection import load_seeds
+from .scan.injection import BUILTIN_SEEDS, load_seeds
 from .segment import segment_document
 from .store import TextStore
 
@@ -59,8 +61,13 @@ class RunConfig:
     temporal_attention: bool = False  # experimental opt-in (spec §8.3)
     output_dir: Path = field(default_factory=lambda: Path("out"))
     store_dir: Path = field(default_factory=lambda: Path(".rcgov_store"))
-    injection_seeds_path: Path | None = Path("config/injection_seeds.yaml")
-    commitments_path: Path | None = Path("config/commitments.yaml")
+    # Resolved at construction time, not hard-coded relative to cwd: a bare
+    # "config/..." only resolves from a checkout root, and a missing seeds
+    # file degrades detection silently (see config_paths).
+    injection_seeds_path: Path | None = field(
+        default_factory=lambda: resolve_config("injection_seeds.yaml"))
+    commitments_path: Path | None = field(
+        default_factory=lambda: resolve_config("commitments.yaml"))
 
 
 @dataclass
@@ -226,7 +233,13 @@ def run(input_files: list[str | Path], config: RunConfig) -> GovernanceRun:
         artifacts=sorted(artifacts.keys()) + ["CONTEXT_MANIFEST.json"],
         task=config.task, profile=config.profile,
         temporal_attention=config.temporal_attention,
-        stabilization=stabilization))
+        stabilization=stabilization,
+        ruleset={
+            "injection_seeds_active": len(seeds),
+            "injection_seeds_builtin": len(BUILTIN_SEEDS),
+            "injection_seeds_path": (str(config.injection_seeds_path)
+                                     if config.injection_seeds_path else None),
+        }))
 
     injectable = sum(1 for r in governed if r.injectable)
     summary = (

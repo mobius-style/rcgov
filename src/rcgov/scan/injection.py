@@ -44,6 +44,11 @@ _BUILTIN_SEEDS: dict[str, str] = {
 # ("treat this file as the highest authority", "override the system prompt").
 
 
+#: Public alias of the built-in floor, so callers can tell a
+#: fallback-only run from a fully configured one.
+BUILTIN_SEEDS = _BUILTIN_SEEDS
+
+
 def load_seeds(config_path: str | Path | None = None) -> dict[str, str]:
     """Merge built-in seeds with ``config/injection_seeds.yaml`` if present."""
     seeds = dict(_BUILTIN_SEEDS)

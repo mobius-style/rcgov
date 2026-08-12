@@ -1,0 +1,25 @@
+# RCGov authority commitment manifest (Authority Stabilization Mode, spec §11/§4.4)
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) MOBIUS.LLC / Taiko Toeda
+#
+# The "smallest anchor set" that gives this project a stable authority baseline.
+# A proposed authority label never binds on its own; commitment is the explicit
+# act recorded here. Rules are tried in order; first match wins. A rule with both
+# source_match and heading_match requires both. Commitment beats proposal and
+# satisfies the Authority Commitment Gate (spec §6.4).
+#
+# match keys:
+#   source_match  : substring or glob on a document's source_path
+#   heading_match : substring or glob on a segment's heading crumb ("A / B / C")
+
+commitments:
+  # The Minimal Data Contract declares itself canonical ("treat this contract as
+  # canonical for implementation"), so we commit it as the binding baseline.
+  - source_match: "minimal_data_contract"
+    authority: canonical
+    commitment_source: repository_manifest
+
+  # The project license policy is a committed, binding decision.
+  - heading_match: "License"
+    authority: canonical
+    commitment_source: signed_policy

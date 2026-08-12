@@ -40,6 +40,11 @@ rcgov = "rcgov.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The YAML defaults must travel with the wheel; without this the injection
+# seeds silently fall back to the five built-ins on every installed copy.
+[tool.setuptools.package-data]
+rcgov = ["config/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
