@@ -99,6 +99,25 @@ carrier retention unchanged at 26 / 26. Pinned by
 `tests/test_injection_recall.py`, which was itself verified to fail on the
 pre-change build before being adopted.
 
+**What it costs, measured on real traffic** (237 project documents, ~4.5 MB):
+four documents gained a structural finding. Three of them are papers that
+*quote* attack strings — the standard false positive of any injection detector
+run over security literature — and one is an ordinary sentence ("override with
+the orphan-snapshot push above"). Only the largest of the four lost content
+from its pack (9.6 KB of 1.1 MB, 0.9%), and every exclusion is named in
+`NON_INJECTION_REPORT.md`, so the loss is visible rather than silent. The
+secretary's gated verbs (`docs`, `handoff`, `git-history`) re-ran with zero
+segments excluded and zero abstains.
+
+Latency: unchanged on short documents (4.23 → 4.24 ms median, study corpus,
+median 184 chars) but the patterns scan the whole text, costing roughly 10 ms
+per 100 KB. Lowercasing once and dropping `IGNORECASE` would recover ~30% and
+was rejected: `str.lower()` is not length-preserving on all of Unicode, and
+this project's corpus is largely Japanese, so the saving would be bought with
+an offset-desync hazard in the excerpt reporting. A literal prefilter was also
+measured and rejected — the trigger words include `show`, `print`, and
+`output`, so 123 of 230 real documents pass it and the saving was 5%.
+
 **What this decision explicitly does not do:** it raises a floor. Nine classes
 survive the union, including the three the same study measured at 1.000 model
 compliance (chained instructions, debug-mode requests, negation tricks). Those

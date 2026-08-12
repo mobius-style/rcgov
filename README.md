@@ -1,12 +1,19 @@
 # RCGov — Mobius Reflective Context Governor
 
-> RCGov cleans and governs AI context **before** the model reads it.
+> RCGov decides what is admitted into an LLM's context, and leaves an auditable
+> record of every decision.
 
 RCGov is a **local-first semantic hygiene and context-governance** tool for LLM
 systems. Instead of trying to make a bigger context window, it provides a
 **cleaner intake**: raw project material is turned into reviewable, gated,
 provenance-preserved, disagreement-aware context packs before a model is
 allowed to drink it.
+
+Its value is in the *determinism and the record* — the same document produces
+the same admission decision, credentials and provenance are handled by stated
+rules, and the manifest reports how many of those rules were actually in force.
+It is **not** a security boundary against an adversary who is choosing their
+phrasing; the measured numbers below say so explicitly.
 
 The governing axiom is the context-side companion to Mobius answer entitlement:
 
@@ -79,7 +86,10 @@ not as "nothing bad is present".
 
 **If you are evaluating RCGov, evaluate it for these**: deterministic
 pre-generation removal, credential and provenance handling, an auditable
-decision log, roughly 4 ms of added latency, and — since `244bb48` — a manifest
+decision log, single-digit-millisecond latency on short documents (4.2 ms
+median on the study corpus, and it scales with text: the structural patterns
+add roughly 10 ms per 100 KB, so a megabyte-scale document costs a fifth of a
+second), and — since `244bb48` — a manifest
 that reports how many rules were actually in force, so a degraded install is
 distinguishable from a healthy one. **Do not adopt it as a prompt-injection
 defence.** For that, compose it with a different mechanism class; a seed list
@@ -95,7 +105,8 @@ measure.
   *Minimal Data Contract v0.1*;
 - **ingest** (encoding repair + content-addressed store), **segment**
   (markdown heading-aware, provenance-preserving), **scan**
-  (regex+entropy secrets, imperative prompt-injection seeds), **propose**
+  (regex+entropy secrets, prompt-injection seed phrases and structural override
+  patterns), **propose**
   (transparent low-confidence keyword heuristics), **provenance**, the
   **non-compensatory gate** layer, **priority** (lexical TF-cosine), **conflict
   detection** (drift detectors routed via friction governance), and **pack**
