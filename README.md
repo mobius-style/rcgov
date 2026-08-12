@@ -213,3 +213,22 @@ Part of the [MOBIUS](https://github.com/mobius-style) program — local-first, A
 - [rcgov](https://github.com/mobius-style/rcgov) — reflective context governor: governs *what a model may read*
 - [infinity](https://github.com/mobius-style/infinity) — composite capstone (MMV × RQA) with an OpenAI-compatible API
 - [tokyo-insight](https://github.com/mobius-style/tokyo-insight) — on-demand civic-RAG engine for 東京都議会 deliberation records (engine + facts only)
+
+## Incident report — silent ruleset degradation (fixed in 244bb48)
+
+Between the first tagged release and commit
+[`244bb48`](https://github.com/mobius-style/rcgov/commit/244bb48), the extended
+prompt-injection ruleset was addressed by a working-directory-relative path and
+was not packaged into the wheel. Any installation running outside a source
+checkout therefore used only the five built-in seeds, while
+`NON_INJECTION_REPORT.md` still read `Prompt-Injection Residue: _(none)_`.
+
+The defect, its measured cost, and an adverse residual effect on the attacks
+the guardrail misses are reported in full:
+**DOI [10.5281/zenodo.21903321](https://doi.org/10.5281/zenodo.21903321)** ·
+artifacts at
+[mobius-style/guardrail-silent-degradation](https://github.com/mobius-style/guardrail-silent-degradation).
+
+Since the fix, `CONTEXT_MANIFEST.json` carries a `ruleset` block reporting
+active versus built-in rule counts, so a degraded run is distinguishable from a
+healthy one without reading the code.
