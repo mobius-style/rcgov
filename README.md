@@ -32,11 +32,22 @@ is now measured, on our own component, and it is low for prompt injection.**
 | against a 26-class authored evasion corpus | classes withheld |
 |---|---:|
 | the injection seed matcher alone | **9 / 26** |
-| the full pipeline (seeds + provenance/authority gate) | **13 / 26** |
+| the structural pattern matcher alone | **12 / 26** |
+| the full pipeline as shipped today (both, plus the provenance/authority gate) | **17 / 26** |
 | planted credentials, 8 pattern classes | 24 / 24 |
 
-Read that first row as the honest one: **a substring seed list is a detection
-floor, not a defence.** Half the corpus reaches the model. There is also an
+Read the first row as the honest one: **a substring seed list is a detection
+floor, not a defence** — one inserted word defeats a literal match. The measured
+study ran against seeds alone, at 13 / 26 for the whole pipeline; the structural
+matcher was added afterwards in response to that result and lifts the pipeline
+to 17 / 26 with no false positives on the benign or credential-bearing controls
+(`tests/test_injection_recall.py` pins both numbers).
+
+**A third of the corpus still reaches the model, and it is the worse third.**
+The nine surviving classes include the three the same study measured at 1.000
+model compliance — chained instructions, debug-mode requests, and negation
+tricks. Those are phrased as ordinary requests and carry no adversarial verb, so
+pattern matching of this kind will not reach them at any width. There is also an
 exploratory and unflattering result — on the classes the pipeline misses,
 handing the model a governed pack was associated with *higher* injection
 compliance than handing it the raw document (one artifact, p = 0.0117
@@ -54,8 +65,9 @@ Concretely, these pass through:
 
 - secrets with no recognizable format or entropy signature (a short password, an
   internal identifier that is sensitive only in context);
-- prompt injections phrased without the imperative seeds the scanner looks for —
-  a novel phrasing costs an attacker nothing;
+- prompt injections that carry no imperative override at all — a request framed
+  as a hypothetical, a debug-mode ask, or a chained continuation reads like
+  ordinary text to both detector families;
 - stale or superseded text that carries no status marker to detect it by;
 - anything the low-confidence authority/temporal heuristics rank wrongly. These
   are surfaced for review rather than trusted, by design.
@@ -215,11 +227,12 @@ Annual invoicing available at USD 5,000/year.
 It is a license grant, not a service: no service is performed, no data of
 yours is accessed, and nothing you run depends on our availability.
 
-**Before you buy, read what this does not do.** RCGov's injection seed matcher
-withheld 9 of 26 classes in our own published evaluation
-([DOI 10.5281/zenodo.21903321](https://doi.org/10.5281/zenodo.21903321)); it is
-a floor, not a prompt-injection defence, and the same report documents a
-configuration defect of ours that silently reduced it further until `244bb48`.
+**Before you buy, read what this does not do.** RCGov's injection scanning
+withholds 17 of 26 classes on our own published evaluation corpus
+([DOI 10.5281/zenodo.21903321](https://doi.org/10.5281/zenodo.21903321)), and
+the nine it misses are the ones models obeyed most often; it is a floor, not a
+prompt-injection defence, and the same report documents a configuration defect
+of ours that silently reduced it further until `244bb48`.
 Buy it for deterministic pre-generation filtering, credential and provenance
 handling, an auditable decision log, and coverage self-attestation — not for
 injection protection.

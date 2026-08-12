@@ -45,7 +45,7 @@ from .propose import propose_authority, propose_role, propose_temporal
 from .provenance import appraise_provenance, meets_minimum
 from .records import Governed
 from .scan import scan_injection, scan_secrets
-from .scan.injection import BUILTIN_SEEDS, load_seeds
+from .scan.injection import BUILTIN_SEEDS, STRUCTURAL_PATTERNS, load_seeds
 from .segment import segment_document
 from .store import TextStore
 
@@ -239,6 +239,10 @@ def run(input_files: list[str | Path], config: RunConfig) -> GovernanceRun:
             "injection_seeds_builtin": len(BUILTIN_SEEDS),
             "injection_seeds_path": (str(config.injection_seeds_path)
                                      if config.injection_seeds_path else None),
+            # Reported separately from the seeds so an operator reading the
+            # manifest can tell which detector family was in force. A seed
+            # count alone cannot distinguish the two.
+            "structural_patterns_active": len(STRUCTURAL_PATTERNS),
         }))
 
     injectable = sum(1 for r in governed if r.injectable)

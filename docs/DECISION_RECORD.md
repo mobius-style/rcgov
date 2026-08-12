@@ -69,12 +69,43 @@ themselves are cleaned on entry.
 | Concern | MVP implementation |
 |---|---|
 | Secret detection | regex + Shannon entropy |
-| Prompt-injection | heuristic seed patterns (`config/injection_seeds.yaml`) |
+| Prompt-injection | heuristic seed patterns (`config/injection_seeds.yaml`) **+ structural patterns (2026-08-12, see below)** |
 | Relevance / task-proximity | `multilingual-e5-large` (experimental, opt-in) |
 | DFI / ORS | **not learned** — conservative priors + logging only (`N_min = 5`) |
 
 This keeps the spec's "implementable now" claim honest and avoids a hard model
 dependency in the robust core.
+
+### 4(a) — Structural injection patterns (2026-08-12)
+
+**Decision:** add a second, structural detector family alongside the seed
+phrases, running on every scan by default (`scan_injection(..., structural=False)`
+restores the old behaviour for reproducing published results).
+
+**Why:** the seed list is a substring matcher, so any rephrasing defeats it —
+the evasion `ignore ALL previous instructions` walks past the built-in seed
+`ignore previous instructions` on one inserted word. The structural patterns
+match the *shape* of an override instead: an imperative verb bound to an
+instruction-like object inside a short window, a role reassignment, a spoofed
+turn marker. They were promoted from the integration-layer guard that shipped
+with `gemma-4-12b-mobius-custom`, where they already ran as defense in depth
+over this scanner.
+
+**Measured, not assumed** (26-class authored evasion corpus,
+DOI 10.5281/zenodo.21903321): seeds + provenance/authority gates withheld
+13 / 26 classes, structural patterns alone 12 / 26, the union 17 / 26 — with
+zero hits on benign controls, zero hits on credential-bearing documents, and
+carrier retention unchanged at 26 / 26. Pinned by
+`tests/test_injection_recall.py`, which was itself verified to fail on the
+pre-change build before being adopted.
+
+**What this decision explicitly does not do:** it raises a floor. Nine classes
+survive the union, including the three the same study measured at 1.000 model
+compliance (chained instructions, debug-mode requests, negation tricks). Those
+carry no adversarial verb, so no pattern matcher of this family reaches them at
+any width — widening the regexes further trades false positives for nothing.
+The README's "do not adopt this as a prompt-injection defence" language stands
+and is not revisable by tuning this detector.
 
 ---
 

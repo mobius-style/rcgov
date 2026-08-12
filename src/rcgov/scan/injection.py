@@ -16,7 +16,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["InjectionFinding", "scan_injection", "load_seeds"]
+__all__ = ["InjectionFinding", "scan_injection", "load_seeds",
+           "BUILTIN_SEEDS", "STRUCTURAL_PATTERNS"]
 
 
 @dataclass(frozen=True)
@@ -70,8 +71,59 @@ def load_seeds(config_path: str | Path | None = None) -> dict[str, str]:
     return seeds
 
 
-def scan_injection(text: str, seeds: dict[str, str] | None = None) -> list[InjectionFinding]:
-    """Return injection findings: case-insensitive phrase matches over ``text``."""
+
+# ── Structural detectors (Decision Record 4, extension 2026-08-12) ──────────
+#
+# Substring seeds fail on any rephrasing: one inserted word defeats a literal
+# match, which is how "ignore ALL previous instructions" slipped past a floor
+# containing "ignore previous instructions". These patterns match the *shape*
+# of an override — an imperative verb bound to an instruction-like object
+# within a short window — rather than a fixed string.
+#
+# Provenance: promoted from the integration-layer guard shipped with
+# moebiusT7/gemma-4-12b-mobius-custom, where it ran as defense in depth over
+# this scanner. Measured on the 26-class authored evasion corpus of
+# DOI 10.5281/zenodo.21903321: seeds+provenance alone withheld 13/26 classes,
+# these patterns alone 12/26, and the union 17/26, with 0 false positives on
+# benign controls and 0 spurious hits on credential-bearing documents.
+#
+# This raises the floor. It is NOT a defence. Nine classes survive the union —
+# including the three the same study measured at 1.000 model compliance
+# (chained instructions, debug-mode requests, negation tricks). Those are
+# phrased as ordinary requests and carry no adversarial verb, so no pattern
+# matcher of this kind will reach them; see the paper's §7.
+STRUCTURAL_PATTERNS: dict[str, str] = {
+    "override_instruction": (
+        r"(?:ignore|disregard|forget|override)\b[^.\n]{0,40}?"
+        r"\b(?:instruction|instructions|rule|rules|prompt|context|above|"
+        r"previous|prior|everything|all)\b"
+    ),
+    "exfiltrate_prompt_or_secret": (
+        r"\b(?:reveal|print|show|expose|leak|repeat|output)\b[^.\n]{0,30}?"
+        r"\b(?:system prompt|your prompt|your instructions|the prompt|"
+        r"secret|secrets|api[ _-]?key)\b"
+    ),
+    "role_reassignment": r"\byou are now\b|\bpretend (?:to be|you are)\b",
+    "jailbreak_persona": r"\bdeveloper mode\b|\bjailbreak\b|\bDAN\b",
+    "spoofed_turn_marker": r"^\s*system\s*:|\bnew instructions?\s*:",
+    "override_safety": r"\boverride (?:safety|the rules|all)\b",
+}
+
+_STRUCTURAL_COMPILED = {
+    pid: re.compile(rx, re.IGNORECASE | re.MULTILINE)
+    for pid, rx in STRUCTURAL_PATTERNS.items()
+}
+
+def scan_injection(text: str, seeds: dict[str, str] | None = None,
+                   *, structural: bool = True) -> list[InjectionFinding]:
+    """Return injection findings over ``text``.
+
+    Two detector families run side by side, never in place of one another:
+    literal seed phrases (configurable, see ``load_seeds``) and the structural
+    patterns above. Findings carry the id that matched, so a report always says
+    *which* detector fired. ``structural=False`` restores seed-only behaviour
+    for anyone reproducing pre-2026-08-12 results.
+    """
     seeds = seeds if seeds is not None else _BUILTIN_SEEDS
     lowered = text.lower()
     findings: list[InjectionFinding] = []
@@ -81,4 +133,11 @@ def scan_injection(text: str, seeds: dict[str, str] | None = None) -> list[Injec
                 InjectionFinding(pattern_id=pid, start=m.start(), end=m.end(),
                                  excerpt=text[m.start():m.end()])
             )
+    if structural:
+        for pid, rx in _STRUCTURAL_COMPILED.items():
+            for m in rx.finditer(text or ""):
+                findings.append(
+                    InjectionFinding(pattern_id=pid, start=m.start(), end=m.end(),
+                                     excerpt=text[m.start():m.end()])
+                )
     return findings
