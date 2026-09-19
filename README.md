@@ -279,6 +279,46 @@ Part of the [MOBIUS](https://github.com/mobius-style) program — local-first, A
 - [infinity](https://github.com/mobius-style/infinity) — composite capstone (MMV × RQA) with an OpenAI-compatible API
 - [tokyo-insight](https://github.com/mobius-style/tokyo-insight) — on-demand civic-RAG engine for 東京都議会 deliberation records (engine + facts only)
 
+## Incident report — the Clean Context Pack is a triage, not a scrub (three downstream callers, fixed 2026-09-20)
+
+`govern_bytes()` returns `CLEAN_CONTEXT_PACK.md`: the segments the pipeline
+judged *placeable* for the task after authority and priority appraisal. Three
+products in this program — `moebiusT7/gemma-4-12b-mobius-custom` (v1.0),
+`moebiusT7/gemma-4-12b-mobius-custom-c1` / `gemma-4-26b-a4b-mobius-custom-c1`
+(v1), and `mobius-style/mobius-governance` (≤ 0.8.2) — handed a language model
+that pack as if it were *the retrieved context minus what the scanner flagged*.
+It is not. Without a commitments manifest a segment of plain prose with no
+provenance is routed to `requires_review` and simply does not appear, and the
+pack carries no marker for it: measured 2026-09-19, an English paragraph
+vanished while the caller reported the context as governed. The C1 wrappers
+additionally never reached this point — their call had the wrong shape, raised
+`TypeError`, and was caught into a labelled *fail-open* that passed the raw
+context through. Found on the first day the wrappers were used as the author's
+own daily session-record clerk.
+
+Nothing in `govern_bytes` was wrong for what it is: a pack is what the
+Streamlit MVP renders, and the paper describes it as a triage. The defect was
+downstream — and the API offered no honest primitive for the scrubbing use
+case, so each caller improvised one. Since 0.2.0 it does:
+
+```python
+from rcgov.service import rebuild_bytes
+
+r = rebuild_bytes([("ctx.md", text.encode())], task="Answer the user's question.")
+r.text["ctx.md"]   # the input, byte-identical except where a segment was excluded
+r.excluded         # [{input, segment, heading, reason}] — placeholder left in the text
+r.retained         # heuristic-only flags (high_entropy_token) kept and listed
+r.admitted         # segments that reached the model unchanged
+```
+
+Every segment is kept byte-for-byte, kept with a listed heuristic flag, or
+replaced by a placeholder whose reason is recorded. Spans are verified against
+the run's own records and a manifest that disagrees with them raises. The model
+wrappers were re-released on this design on 2026-09-19/20 (they carry a local copy
+so `rcgov` stays optional there); `mobius-governance` 0.8.3 follows the same day
+(advisory MG-2026-003). `tests/test_rebuild.py` pins the
+triage behaviour of the pack and every branch of the rebuild.
+
 ## Incident report — silent ruleset degradation (fixed in 244bb48)
 
 Between the first tagged release and commit
