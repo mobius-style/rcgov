@@ -117,7 +117,28 @@ def _materialize(inputs: list[tuple[str, bytes]], workdir: str | Path | None) ->
 # confirmed secrets).
 RETAIN_KINDS: frozenset[str] = frozenset({"high_entropy_token"})
 EXCLUDED_PLACEHOLDER = "_[segment excluded by RCGov — see excluded]_\n"
+REDACTED_HEADING = "[heading withheld by RCGov]"
 _HEADING_RE = re.compile(r"^#{1,6}\s+\S")
+
+
+def _line_is_flagged(line: str, retain_kinds: frozenset[str]) -> bool:
+    """True when a single line carries a confirmed secret kind or an injection
+    pattern. A segment's first line is kept as its heading when the segment is
+    excised — but ``# AWS_SECRET_ACCESS_KEY=...`` in a .env file, a commented
+    key in a code fence, or a heading that quotes a key is also a "heading".
+    Until 0.2.1 such a line was copied through verbatim and repeated in
+    ``excluded[].heading``."""
+    from .scan import scan_injection, scan_secrets
+    if any(f.kind not in retain_kinds for f in scan_secrets(line)):
+        return True
+    return bool(scan_injection(line))
+
+
+def _safe_heading_path(path, retain_kinds: frozenset[str]) -> str:
+    return " / ".join(
+        REDACTED_HEADING if _line_is_flagged(str(h), retain_kinds) else str(h)
+        for h in (path or ())
+    )
 
 
 @dataclass
@@ -173,7 +194,8 @@ def rebuild_bytes(
     This is the call for "let the model read this text, minus what the scanner
     flagged". Kept segments are copied byte-for-byte from the input; segments
     with a confirmed secret kind, an injection pattern, or a quarantine gate are
-    replaced by ``placeholder`` (a leading heading line is preserved) and listed
+    replaced by ``placeholder`` (a leading heading line is preserved unless the
+    heading line itself is flagged) and listed
     in ``excluded`` with their reason; heuristic-only kinds in ``retain_kinds``
     are kept and listed in ``retained``. Every span is verified against the
     record's own text before it is trusted; a mismatch, or a manifest that
@@ -210,11 +232,13 @@ def rebuild_bytes(
                 raise RuntimeError(f"span verification failed for {rec.segment.segment_id} [{s}:{e}] of {n}")
             klass, reason = _classify(rec, retain_kinds)
             item = {"input": name, "segment": rec.segment.segment_id,
-                    "heading": " / ".join(rec.segment.heading_path or ()), "reason": reason}
+                    "heading": _safe_heading_path(rec.segment.heading_path, retain_kinds),
+                    "reason": reason}
             pieces.append(doc[cursor:s])
             if klass == "exclude":
-                first, _nl, _rest = rec.text.partition("\n")
-                pieces.append((first + "\n\n" + placeholder) if _HEADING_RE.match(first) else placeholder)
+                first = rec.text.splitlines()[0] if rec.text else ""
+                keep_heading = bool(_HEADING_RE.match(first)) and not _line_is_flagged(first, retain_kinds)
+                pieces.append((first + "\n\n" + placeholder) if keep_heading else placeholder)
                 out.excluded.append(item)
             else:
                 pieces.append(doc[s:e]); out.admitted += 1

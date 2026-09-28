@@ -62,3 +62,58 @@ def test_all_excluded_reports_zero_admitted(tmp_path):
 def test_placeholder_is_configurable(tmp_path):
     r = rebuild_bytes([("notes.md", SECRET)], task="x", placeholder="[REDACTED]\n", workdir=tmp_path)
     assert "[REDACTED]" in r.text["notes.md"]
+
+
+# --- 0.2.1: labelled AWS secret keys and sk- keys must not survive rebuild.
+_AWS_SECRET = "Zq3vT8mK1xY7bN4cR9pL2wD6hJ0sF5gA+uE/iO3B"
+_SK = "sk-" + "a8Kd02LmQx7Vt4Nz9Pb3Rc6Ys1Wf5Hg0Je2Ui8Oo4Tt7Mm1B"
+
+
+def _doc(body: str) -> bytes:
+    return ("# Notes\n\nService runs in us-east-1.\n\n# Access\n\n%s\n\n# Schedule\n\n"
+            "Release is on Friday.\n" % body).encode()
+
+
+def test_labelled_aws_secret_and_sk_keys_are_excised(tmp_path):
+    cases = {
+        "aws_env": (f"aws_secret_access_key = {_AWS_SECRET}", _AWS_SECRET),
+        "aws_json": ('{"SecretAccessKey": "%s"}' % _AWS_SECRET, _AWS_SECRET),
+        "sk": (f"OPENAI key: {_SK}", _SK),
+    }
+    for name, (body, key) in cases.items():
+        r = rebuild_bytes([("n.md", _doc(body))], task="summarise", workdir=tmp_path / name)
+        out = r.joined()
+        assert "Release is on Friday" in out and "us-east-1" in out   # siblings survive
+        assert key not in out, name
+        assert len(r.excluded) == 1 and r.retained == [], name
+
+
+def test_hash_like_strings_are_still_retained_not_excised(tmp_path):
+    body = "sha256 3e2560b19bee6952c7c7ce041b0f1ea8a7ea9468044c4eea79d2a2c67e24ab0f of the audio file"
+    r = rebuild_bytes([("n.md", _doc(body))], task="summarise", workdir=tmp_path)
+    assert "3e2560b19bee6952" in r.joined() and r.excluded == []
+
+
+def test_secret_on_a_comment_or_heading_line_does_not_survive(tmp_path):
+    """The excised segment's first line used to be kept as its "heading", and a
+    ``# KEY=...`` comment line is a heading to the segmenter."""
+    cases = {
+        "env_comment": f"# AWS_SECRET_ACCESS_KEY={_AWS_SECRET}\nAWS_REGION=us-east-1\n",
+        "md_heading": f"# Key {_SK}\n\nbody text\n",
+        "old_key_comment": f"# old: aws_secret_access_key = {_AWS_SECRET}\naws_secret_access_key = rotated\n",
+        "ghp_comment": "# token ghp_x9Q2vLm8ZpR4tW7yB1nK3sD6fH0jA5cE7uIo\nvalue\n",
+    }
+    for name, body in cases.items():
+        key = _SK if "md_heading" == name else (_AWS_SECRET if "ghp" not in name else "ghp_x9Q2vLm8ZpR4tW7yB1nK3sD6fH0jA5cE7uIo")
+        doc = ("# Notes\n\nService runs in us-east-1.\n\n" + body + "\n# Schedule\n\nRelease is on Friday.\n").encode()
+        r = rebuild_bytes([("n.md", doc)], task="summarise", workdir=tmp_path / name)
+        out = r.joined()
+        assert "Release is on Friday" in out
+        assert key not in out, name
+        assert all(key not in str(item) for item in r.excluded + r.retained), name
+
+
+def test_clean_heading_of_an_excised_segment_is_still_kept(tmp_path):
+    r = rebuild_bytes([("n.md", _doc(f"aws_secret_access_key = {_AWS_SECRET}"))],
+                      task="summarise", workdir=tmp_path)
+    assert "# Access\n" in r.joined() and r.excluded[0]["heading"].endswith("Access")
