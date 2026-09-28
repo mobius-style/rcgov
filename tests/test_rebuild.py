@@ -117,3 +117,46 @@ def test_clean_heading_of_an_excised_segment_is_still_kept(tmp_path):
     r = rebuild_bytes([("n.md", _doc(f"aws_secret_access_key = {_AWS_SECRET}"))],
                       task="summarise", workdir=tmp_path)
     assert "# Access\n" in r.joined() and r.excluded[0]["heading"].endswith("Access")
+
+
+# --- final review, 2026-09-29 -------------------------------------------------
+
+def test_flagged_heading_is_withheld_even_when_its_title_is_not(tmp_path):
+    """The raw line ``# password: <7>#`` is flagged; the title, with the
+    trailing ``#`` stripped, is one character short of the pattern."""
+    value = "q7Zp2M8"
+    r = rebuild_bytes([("d.md", f"# Notes\n\nplain\n\n# password: {value}#\n\nbody\n".encode())],
+                      "summarise", workdir=tmp_path)
+    assert value not in r.joined()
+    assert all(value not in str(item) for item in r.excluded + r.retained)
+
+
+def test_heading_of_an_excised_segment_carries_no_token_at_all(tmp_path):
+    """Headings get the strict rule: a bare high-entropy token, kept in body
+    text, is withheld from the heading of an excised segment."""
+    bare = "x9Q2vLm8ZpR4tW7yB1nK3sD6fH0jA5cE7uIo"
+    doc = f"# Notes\n\nplain\n\n## run {bare}\n\nkey {_SK}\n"
+    r = rebuild_bytes([("d.md", doc.encode())], "summarise", workdir=tmp_path)
+    assert bare not in r.joined() and _SK not in r.joined()
+    assert all(bare not in str(item) for item in r.excluded)
+
+
+def test_long_parent_heading_is_scanned_once(tmp_path):
+    from rcgov import service
+    service._line_is_flagged_cached.cache_clear()
+    parent = "# " + "ordinary words in a very long heading " * 200
+    doc = parent + "\n\n" + "".join(f"## child {i}\n\nprose {i}\n\n" for i in range(60))
+    rebuild_bytes([("d.md", doc.encode())], "summarise", workdir=tmp_path)
+    info = service._line_is_flagged_cached.cache_info()
+    assert info.misses <= 2 * 61 + 2, info      # each distinct line or title once
+    assert info.hits >= 60, info                # the parent, once per child
+
+
+def test_heading_with_many_spaces_does_not_stall():
+    import time
+    from rcgov.segment import _heading
+    started = time.perf_counter()
+    assert _heading("# x" + " " * 200_000 + "y") == (1, "x" + " " * 200_000 + "y")
+    assert time.perf_counter() - started < 1.0
+    assert _heading("## Title ##  ") == (2, "Title")
+    assert _heading("#no space") is None and _heading("####### seven") is None

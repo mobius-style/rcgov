@@ -18,13 +18,23 @@ from ..scan import scan_secrets
 
 __all__ = ["segment_document"]
 
-_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+_HEADING_OPEN = re.compile(r"^(#{1,6})\s+")
+
+
+def _heading(line: str) -> tuple[int, str] | None:
+    """(level, title) of an ATX heading line, else None. Same result as the
+    pattern ``^(#{1,6})\\s+(.*?)\\s*#*\\s*$`` used until 0.2.0, which took cubic
+    time on ``# x<many spaces>y`` (two minutes for a 4 KB line)."""
+    m = _HEADING_OPEN.match(line)
+    if m is None:
+        return None
+    return len(m.group(1)), line[m.end():].rstrip().rstrip("#").rstrip()
 _PREVIEW_LEN = 160
 
 
 def _redact_preview(text: str) -> str:
     """First non-heading prose, collapsed, with any secret excerpt masked."""
-    body_lines = [ln for ln in text.splitlines() if not _HEADING.match(ln)]
+    body_lines = [ln for ln in text.splitlines() if _heading(ln) is None]
     body = " ".join(ln.strip() for ln in body_lines if ln.strip())
     preview = re.sub(r"\s+", " ", body)[:_PREVIEW_LEN]
     for f in scan_secrets(preview):
@@ -40,9 +50,9 @@ def segment_document(document: Document, raw_text: str, store: TextStore) -> lis
     heads: list[tuple[int, int, str, int]] = []
     offset = 0
     for idx, line in enumerate(lines):
-        m = _HEADING.match(line.rstrip("\n"))
-        if m:
-            heads.append((offset, len(m.group(1)), m.group(2).strip(), idx))
+        h = _heading(line.rstrip("\n"))
+        if h:
+            heads.append((offset, h[0], h[1].strip(), idx))
         offset += len(line)
 
     # Preamble (text before the first heading) becomes its own segment.

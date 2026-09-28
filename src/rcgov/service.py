@@ -9,6 +9,7 @@ testable without importing streamlit or driving a browser.
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 import tempfile
@@ -128,17 +129,45 @@ def _line_is_flagged(line: str, retain_kinds: frozenset[str]) -> bool:
     key in a code fence, or a heading that quotes a key is also a "heading".
     Until 0.2.1 such a line was copied through verbatim and repeated in
     ``excluded[].heading``."""
+    return _line_is_flagged_cached(line, retain_kinds)
+
+
+@functools.lru_cache(maxsize=4096)
+def _line_is_flagged_cached(line: str, retain_kinds: frozenset[str]) -> bool:
+    # Cached: a heading is looked at once per descendant segment, and a long
+    # parent heading over many children made rebuild_bytes ten times slower.
     from .scan import scan_injection, scan_secrets
     if any(f.kind not in retain_kinds for f in scan_secrets(line)):
         return True
     return bool(scan_injection(line))
 
 
-def _safe_heading_path(path, retain_kinds: frozenset[str]) -> str:
+# Headings are metadata, so they get the strict rule: any finding at all,
+# including the kinds that are kept in body text, withholds the heading.
+_STRICT: frozenset[str] = frozenset()
+
+
+def _safe_heading_path(path, withheld: set[str]) -> str:
     return " / ".join(
-        REDACTED_HEADING if _line_is_flagged(str(h), retain_kinds) else str(h)
+        REDACTED_HEADING if (str(h) in withheld or _line_is_flagged(str(h), _STRICT))
+        else str(h)
         for h in (path or ())
     )
+
+
+def _withheld_titles(records) -> set[str]:
+    """Titles whose own heading line is flagged. The title is the line with its
+    markers stripped, and the stripped form can fall under a pattern's minimum
+    length while the raw line does not — so the raw line decides."""
+    out: set[str] = set()
+    for rec in records:
+        path = rec.segment.heading_path
+        if not path or not rec.text:
+            continue
+        first = rec.text.splitlines()[0]
+        if _HEADING_RE.match(first) and _line_is_flagged(first, _STRICT):
+            out.add(str(path[-1]))
+    return out
 
 
 @dataclass
@@ -225,6 +254,7 @@ def rebuild_bytes(
         doc = src.read_text(encoding="utf-8")
         recs = sorted(by_doc.get(entry["document_id"], []), key=lambda r: r.segment.source_span.start)
         pieces, cursor, n = [], 0, len(doc)
+        withheld = _withheld_titles(recs)
         for rec in recs:
             sp = rec.segment.source_span
             s, e = sp.start, sp.end
@@ -232,12 +262,12 @@ def rebuild_bytes(
                 raise RuntimeError(f"span verification failed for {rec.segment.segment_id} [{s}:{e}] of {n}")
             klass, reason = _classify(rec, retain_kinds)
             item = {"input": name, "segment": rec.segment.segment_id,
-                    "heading": _safe_heading_path(rec.segment.heading_path, retain_kinds),
+                    "heading": _safe_heading_path(rec.segment.heading_path, withheld),
                     "reason": reason}
             pieces.append(doc[cursor:s])
             if klass == "exclude":
                 first = rec.text.splitlines()[0] if rec.text else ""
-                keep_heading = bool(_HEADING_RE.match(first)) and not _line_is_flagged(first, retain_kinds)
+                keep_heading = bool(_HEADING_RE.match(first)) and not _line_is_flagged(first, _STRICT)
                 pieces.append((first + "\n\n" + placeholder) if keep_heading else placeholder)
                 out.excluded.append(item)
             else:

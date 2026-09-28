@@ -304,11 +304,14 @@ by spaces, backticks, a table bar, a full-width colon, `=>`, or XML tags),
 JWTs, Slack webhooks, bearer tokens, Azure account keys, URL credentials, and
 key names the old assignment pattern could not reach; prefixes are matched
 after CJK text as well. `private_key_block` was widened from RSA / EC /
-OPENSSH to any `BEGIN … PRIVATE KEY` header (DSA, ENCRYPTED, PGP). A heading line that is itself flagged is replaced by
-the placeholder and withheld from `excluded[].heading`.
+OPENSSH to any `BEGIN … PRIVATE KEY` header (DSA, ENCRYPTED, PGP). A heading
+line that is itself flagged is replaced by the placeholder and withheld from
+`excluded[].heading`. Headings get a stricter rule than body text: any
+finding at all, including a bare high-entropy token, withholds the heading of
+an excised segment.
 
 Independent reviews ran before release, on random strings of the right shape
-(never real credentials), and each of the first three refused it:
+(never real credentials), and each of the first four refused it:
 
 1. The first draft let 39 of 75 secret-bearing document forms through.
 2. The second ran in quadratic time on `token=token=…` (79 s for 200 KB),
@@ -319,9 +322,16 @@ Independent reviews ran before release, on random strings of the right shape
    removed `AccessKeyCredentialProvider1`, and missed a third of the short
    `sk-` keys whose body is broken by `-` or `_`.
 
-All of these are fixed and under test. Measured on the released code, on this
-machine: every adversarial shape from the reviews scans 2 MB in 0.6–1.2 s and
-doubles with the input; of 70 realistic value shapes × 200 random values, all
+4. The fourth found `rebuild_bytes` ten times slower than 0.2.0 under a long
+   parent heading (each child re-scanned it), a flagged heading whose title
+   still reached `excluded[].heading` (`# password: <7 chars>#`), and — in
+   0.2.0 as well — a heading pattern that took two minutes on one 4 KB line
+   (`# x<spaces>y`).
+
+All of these are fixed and under test. Measured on the released code, on one
+machine: every adversarial shape from the reviews scans 2 MB in under 2 s and
+doubles with the input, which is 4–8 times slower than 0.2.0 on the same
+shapes; of 70 realistic value shapes × 200 random values, all
 detect at 98 % or more except the limits listed below; over 32,166 local
 files (179 M characters of code, configuration and prose) the new kinds fire
 16 times, all on token-shaped values. These measurements are not in the
@@ -333,16 +343,20 @@ Forms that still survive, listed so nobody has to find them again:
 
 - a 40-character string with no label, or with the label more than 24
   characters away, in a table's header row or a CSV header, or on the
-  previous line with no `:` or `=` after it;
-- a letters-only value behind a generic label (`secret_key = "<32 letters>"`)
-  — it cannot be told from an identifier; vendor-prefixed tokens do not have
-  this limit;
+  previous line (`Secret access key:` then the value; the snake_case and
+  CamelCase labels followed by `:` are caught across the line break);
+- a value that reads like words: a digits-only value, one case of letters up
+  to 24 long, or camelCase — behind a generic label or a vendor prefix alike.
+  Real vendor tokens are not shaped like this; a hand-made one may be;
+- a JWT whose payload segment is shorter than 10 characters, and a token
+  split by markdown emphasis;
 - a value followed directly by `.` and a letter;
 - a prefix glued to a preceding letter, including the `n` of an escaped `\n`
   in a JSON string;
 - a YAML folded scalar, a base64-wrapped key, a passphrase written as prose;
-- **passwords.** A value behind `password` / `passwd` that is shorter than 16
-  characters behind a quoted label, or that contains characters outside
+- **passwords and symbol-bearing keys.** A value behind any label
+  (`password`, `passwd`, `secret_key`, …) that is shorter than 16 characters
+  behind a quoted label, or that contains characters outside
   `A–Z a–z 0–9 / + _ - ~` (Django's `SECRET_KEY`, most generated passwords),
   is caught only when the 0.2.0 assignment pattern catches it, and then often
   not over its full length;
@@ -357,8 +371,15 @@ URL forms — are not listed anywhere: **rcgov is not a password scanner.**
 Known false positives of the new kinds, accepted: a hex digest behind a key
 label (`access_key: <sha1>`), documentation passwords in URLs
 (`user:p4ssw0rd@`, `:changeme123@`), and digit-and-letter placeholders behind
-a vendor prefix (`sk-1234567890abcdef…`). The segment is excised and listed
-in `excluded` with its reason.
+a vendor prefix (`sk-1234567890abcdef…`), and identifiers with a digit inside
+behind a key label (`private_key = Ed25519PrivateKeyParametersImplV2`; 1.4 %
+of the 4,082 identifiers of 16 or more characters in the Python standard
+library). The segment is excised and listed in `excluded` with its reason.
+
+Not changed by this release: the files written under `workdir/out/`
+(`NON_INJECTION_REPORT.md`, `CLEAN_CONTEXT_PACK.md`) still print headings as
+they are, flagged or not. The fix covers what `rebuild_bytes` returns. Treat
+the work directory as sensitive as the input.
 
 What this does not change: detection is still pattern-based and English-centric
 for injection; a secret with no label and no known prefix is indistinguishable

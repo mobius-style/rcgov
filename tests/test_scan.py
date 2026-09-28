@@ -185,19 +185,39 @@ def test_private_key_block_was_widened_in_0_2_1():
     assert "private_key_block" not in _kinds("-----BEGIN PUBLIC KEY-----")
 
 
-def test_scan_time_is_linear_on_label_runs():
-    """``token=token=…`` and ``eyJ-eyJ-…`` were quadratic (79 s and 7 s at
-    200 KB); so was the backstop's span check on a page of tokens."""
+def _best_time(text, runs=2):
     import time
+    best = float("inf")
+    for _ in range(runs):
+        started = time.perf_counter()
+        scan_secrets(text)
+        best = min(best, time.perf_counter() - started)
+    return best
+
+
+def test_scan_time_is_linear_on_adversarial_runs():
+    """``token=token=…`` and ``eyJ-eyJ-…`` were quadratic (79 s and 7 s at
+    200 KB); so was the backstop's span check on a page of tokens. Judged by
+    ratios, not seconds: four times the input may cost at most six times the
+    time, and no shape may cost more than four times plain prose."""
+    prose = _best_time(("lorem ipsum dolor sit amet " * 15_000)[:400_000])
     dense = " hf_" + "aB3dE6gH9jK2mN5pQ8rS1tU4vW7xY0zAbc"
     for unit, tail in (("token=", "."), ("secret_key=", "("), ("Bearer ", "."),
                        ("sk-", "."), ("a://:", ""), ("secret key ", ""),
                        ("eyJ-", ""), ("eyJ_", ""), ("-eyJaaaaaaaaaaaa", ""),
-                       (dense, "")):
-        text = unit * (400_000 // len(unit)) + tail
-        started = time.perf_counter()
-        scan_secrets(text)
-        assert time.perf_counter() - started < 5.0, unit
+                       ("-AIza", ""), (dense, "")):
+        small = _best_time(unit * (100_000 // len(unit)) + tail)
+        large = _best_time(unit * (400_000 // len(unit)) + tail)
+        assert large < 6 * small + 0.05, (unit, small, large)
+        assert large < 4 * prose + 0.05, (unit, prose, large)
+
+
+def test_gate_details():
+    # 40 hex characters behind an AWS label are a git SHA, not an AWS secret
+    assert "aws_secret_key" not in _kinds(
+        "secret key rotation landed in 3f2a9c1e7b4d8a6f0e5c2b9d1a7f4e8c6b3d0a59")
+    # one random-looking piece among words does not make the value a secret
+    assert "secret_assignment" not in _kinds("private_key = JSON2XML_converter_tool_name")
 
 
 def test_prefixed_tokens_need_no_digit():
