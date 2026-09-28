@@ -279,7 +279,7 @@ Part of the [MOBIUS](https://github.com/mobius-style) program — local-first, A
 - [infinity](https://github.com/mobius-style/infinity) — composite capstone (MMV × RQA) with an OpenAI-compatible API
 - [tokyo-insight](https://github.com/mobius-style/tokyo-insight) — on-demand civic-RAG engine for 東京都議会 deliberation records (engine + facts only)
 
-## Incident report — labelled secrets survived the rebuild (fixed in 0.2.1, 2026-09-28)
+## Incident report — labelled secrets survived the rebuild (fixed in 0.2.1, 2026-09-29)
 
 Two defects, both found by an inventory of the products that call rcgov and
 confirmed by an adversarial review before release.
@@ -338,8 +338,10 @@ machine: every adversarial shape from the reviews scans 2 MB in under 2 s and
 doubles with the input. Against 0.2.0 on the same 147 shapes the scan is
 slower on most — the median is about 4 times, the worst 44 times
 (0.018 s → 0.79 s) — and faster on the dense ones where 0.2.0 was itself
-quadratic (80 s → 1.9 s). `rebuild_bytes` end to end is at most 1.8 times
-slower than 0.2.0 on the 2 MB inputs tried. Of 70 realistic value shapes × 200 random values, all
+quadratic (80 s → 1.9 s). `rebuild_bytes` end to end is about 2 times slower
+than 0.2.0 on prose and up to about 4.6 times on input that is mostly
+heading text, because headings are scanned again (one 2 MB heading line:
+0.65 s → 2.9 s); it grows linearly wherever 0.2.0 does. Of 70 realistic value shapes × 200 random values, all
 detect at 98 % or more except the limits listed below; over 32,166 local
 files (179 M characters of code, configuration and prose) the new kinds fire
 16 times, all on token-shaped values. These measurements are not in the
@@ -382,8 +384,9 @@ URL forms — are not listed anywhere: **rcgov is not a password scanner.**
 Known false positives of the new kinds, accepted: a hex digest behind a key
 label (`access_key: <sha1>`), documentation passwords in URLs
 (`user:p4ssw0rd@`, `:changeme123@`), and digit-and-letter placeholders behind
-a vendor prefix (`sk-1234567890abcdef…`), and identifiers with a digit inside
-behind a key label (`private_key = Ed25519PrivateKeyParametersImplV2`; 1.4 %
+a vendor prefix (`sk-1234567890abcdef…`), and some long identifiers behind a
+key label — with a digit inside, or camelCase made of short words
+(`private_key = Ed25519PrivateKeyParametersImplV2`, `GetCurrentKeySet`; 1.4 %
 of the 4,082 identifiers of 16 or more characters in the Python standard
 library). The segment is excised and listed in `excluded` with its reason.
 
@@ -391,7 +394,10 @@ Not changed by this release: the files written under `workdir/out/`
 (`NON_INJECTION_REPORT.md`, `CLEAN_CONTEXT_PACK.md`) still print headings as
 they are, flagged or not, and the work directory holds a copy of the input.
 The fix covers what `rebuild_bytes` returns. Treat the work directory as
-sensitive as the input. Also unchanged: input is read with universal
+sensitive as the input. A heading is withheld from the text when its line
+is flagged; a pattern that fires only on the stripped title (`# system: …`)
+withholds the title in `excluded[].heading` but leaves the line in the text.
+Also unchanged: input is read with universal
 newlines, so "byte-for-byte" holds for LF input and CRLF comes back as LF;
 and the pipeline's own cost grows faster than linearly with the number of
 segments (2 MB of tiny sections takes about a minute in both versions).
