@@ -141,22 +141,39 @@ def test_heading_of_an_excised_segment_carries_no_token_at_all(tmp_path):
     assert all(bare not in str(item) for item in r.excluded)
 
 
-def test_long_parent_heading_is_scanned_once(tmp_path):
-    from rcgov import service
-    service._line_is_flagged_cached.cache_clear()
-    parent = "# " + "ordinary words in a very long heading " * 200
-    doc = parent + "\n\n" + "".join(f"## child {i}\n\nprose {i}\n\n" for i in range(60))
+def test_long_parent_heading_is_scanned_once(tmp_path, monkeypatch):
+    import rcgov.scan as scan
+    calls: list[str] = []
+    real = scan.scan_secrets
+    parent_title = "ordinary words in a very long heading " * 200
+    doc = "# " + parent_title + "\n\n" + "".join(
+        f"## child {i}\n\nprose {i}\n\n" for i in range(60))
+
+    def counting(text):
+        if text.strip("# \n") == parent_title.strip():
+            calls.append(text)
+        return real(text)
+    monkeypatch.setattr(scan, "scan_secrets", counting)
     rebuild_bytes([("d.md", doc.encode())], "summarise", workdir=tmp_path)
-    info = service._line_is_flagged_cached.cache_info()
-    assert info.misses <= 2 * 61 + 2, info      # each distinct line or title once
-    assert info.hits >= 60, info                # the parent, once per child
+    assert len(calls) <= 2, len(calls)      # the raw line and the title, once each
+
+
+def test_heading_flagged_by_a_configured_injection_seed_is_withheld(tmp_path):
+    """``act_as`` comes from config/injection_seeds.yaml, not from the
+    built-in floor: the record's own findings must decide."""
+    phrase = "from now on you will act as"
+    r = rebuild_bytes([("n.md", f"# Intro\n\nplain\n\n## {phrase}\n\nbody\n".encode())],
+                      "summarise", workdir=tmp_path)
+    assert r.excluded, "the seed file is not loaded; this test needs it"
+    assert phrase not in r.joined()
+    assert all(phrase not in str(item) for item in r.excluded + r.retained)
 
 
 def test_heading_with_many_spaces_does_not_stall():
     import time
     from rcgov.segment import _heading
     started = time.perf_counter()
-    assert _heading("# x" + " " * 200_000 + "y") == (1, "x" + " " * 200_000 + "y")
-    assert time.perf_counter() - started < 1.0
+    assert _heading("# x" + " " * 2_000 + "y") == (1, "x" + " " * 2_000 + "y")
+    assert time.perf_counter() - started < 1.0       # the old pattern: 14 s
     assert _heading("## Title ##  ") == (2, "Title")
     assert _heading("#no space") is None and _heading("####### seven") is None

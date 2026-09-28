@@ -22,7 +22,8 @@ _HEADING_OPEN = re.compile(r"^(#{1,6})\s+")
 
 
 def _heading(line: str) -> tuple[int, str] | None:
-    """(level, title) of an ATX heading line, else None. Same result as the
+    """(level, title) of an ATX heading line, else None. For a single line (no
+    interior newline, which is all the segmenter passes) the same result as the
     pattern ``^(#{1,6})\\s+(.*?)\\s*#*\\s*$`` used until 0.2.0, which took cubic
     time on ``# x<many spaces>y`` (two minutes for a 4 KB line)."""
     m = _HEADING_OPEN.match(line)

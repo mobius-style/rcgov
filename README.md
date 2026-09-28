@@ -311,7 +311,7 @@ finding at all, including a bare high-entropy token, withholds the heading of
 an excised segment.
 
 Independent reviews ran before release, on random strings of the right shape
-(never real credentials), and each of the first four refused it:
+(never real credentials), and each of the first five refused it:
 
 1. The first draft let 39 of 75 secret-bearing document forms through.
 2. The second ran in quadratic time on `token=token=…` (79 s for 200 KB),
@@ -328,10 +328,18 @@ Independent reviews ran before release, on random strings of the right shape
    0.2.0 as well — a heading pattern that took two minutes on one 4 KB line
    (`# x<spaces>y`).
 
+5. The fifth found that a heading flagged only by a seed from
+   `config/injection_seeds.yaml` (`## from now on you will act as`) was still
+   copied through, because the heading was re-scanned without the seed file.
+   The record's own findings now decide.
+
 All of these are fixed and under test. Measured on the released code, on one
 machine: every adversarial shape from the reviews scans 2 MB in under 2 s and
-doubles with the input, which is 4–8 times slower than 0.2.0 on the same
-shapes; of 70 realistic value shapes × 200 random values, all
+doubles with the input. Against 0.2.0 on the same 147 shapes the scan is
+slower on most — the median is about 4 times, the worst 44 times
+(0.018 s → 0.79 s) — and faster on the dense ones where 0.2.0 was itself
+quadratic (80 s → 1.9 s). `rebuild_bytes` end to end is at most 1.8 times
+slower than 0.2.0 on the 2 MB inputs tried. Of 70 realistic value shapes × 200 random values, all
 detect at 98 % or more except the limits listed below; over 32,166 local
 files (179 M characters of code, configuration and prose) the new kinds fire
 16 times, all on token-shaped values. These measurements are not in the
@@ -346,10 +354,13 @@ Forms that still survive, listed so nobody has to find them again:
   previous line (`Secret access key:` then the value; the snake_case and
   CamelCase labels followed by `:` are caught across the line break);
 - a value that reads like words: a digits-only value, one case of letters up
-  to 24 long, or camelCase — behind a generic label or a vendor prefix alike.
-  Real vendor tokens are not shaped like this; a hand-made one may be;
-- a JWT whose payload segment is shorter than 10 characters, and a token
-  split by markdown emphasis;
+  to 24 long, or camelCase — behind a vendor prefix, or behind a label that
+  only the new pattern reaches (`secret_key`, `access_key`, `private_key`,
+  quoted labels). Behind `token` / `password` / `secret` / `api_key` with `:`
+  or `=` the 0.2.0 pattern still catches it. Real vendor tokens are not
+  shaped like this; a hand-made one may be;
+- a JWT with a header or payload segment shorter than 13 characters (`eyJ`
+  and fewer than 10 more), and a token split by markdown emphasis;
 - a value followed directly by `.` and a letter;
 - a prefix glued to a preceding letter, including the `n` of an escaped `\n`
   in a JSON string;
@@ -378,8 +389,12 @@ library). The segment is excised and listed in `excluded` with its reason.
 
 Not changed by this release: the files written under `workdir/out/`
 (`NON_INJECTION_REPORT.md`, `CLEAN_CONTEXT_PACK.md`) still print headings as
-they are, flagged or not. The fix covers what `rebuild_bytes` returns. Treat
-the work directory as sensitive as the input.
+they are, flagged or not, and the work directory holds a copy of the input.
+The fix covers what `rebuild_bytes` returns. Treat the work directory as
+sensitive as the input. Also unchanged: input is read with universal
+newlines, so "byte-for-byte" holds for LF input and CRLF comes back as LF;
+and the pipeline's own cost grows faster than linearly with the number of
+segments (2 MB of tiny sections takes about a minute in both versions).
 
 What this does not change: detection is still pattern-based and English-centric
 for injection; a secret with no label and no known prefix is indistinguishable

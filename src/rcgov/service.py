@@ -9,7 +9,6 @@ testable without importing streamlit or driving a browser.
 """
 from __future__ import annotations
 
-import functools
 import json
 import re
 import tempfile
@@ -122,40 +121,48 @@ REDACTED_HEADING = "[heading withheld by RCGov]"
 _HEADING_RE = re.compile(r"^#{1,6}\s+\S")
 
 
-def _line_is_flagged(line: str, retain_kinds: frozenset[str]) -> bool:
-    """True when a single line carries a confirmed secret kind or an injection
-    pattern. A segment's first line is kept as its heading when the segment is
-    excised — but ``# AWS_SECRET_ACCESS_KEY=...`` in a .env file, a commented
-    key in a code fence, or a heading that quotes a key is also a "heading".
-    Until 0.2.1 such a line was copied through verbatim and repeated in
-    ``excluded[].heading``."""
-    return _line_is_flagged_cached(line, retain_kinds)
+def _line_is_flagged(line: str, cache: dict[str, bool] | None = None) -> bool:
+    """True when a single line carries any secret finding or a built-in
+    injection pattern. A segment's first line is kept as its heading when the
+    segment is excised — but ``# AWS_SECRET_ACCESS_KEY=...`` in a .env file, a
+    commented key in a code fence, or a heading that quotes a key is also a
+    "heading". Until 0.2.1 such a line was copied through verbatim and
+    repeated in ``excluded[].heading``.
 
-
-@functools.lru_cache(maxsize=4096)
-def _line_is_flagged_cached(line: str, retain_kinds: frozenset[str]) -> bool:
-    # Cached: a heading is looked at once per descendant segment, and a long
-    # parent heading over many children made rebuild_bytes ten times slower.
+    Headings are metadata, so the rule is strict: any finding at all,
+    including the kinds that are kept in body text, counts. ``cache`` lives
+    for one ``rebuild_bytes`` call: a heading is looked at once per descendant
+    segment, and a long parent heading over many children made the rebuild ten
+    times slower."""
     from .scan import scan_injection, scan_secrets
-    if any(f.kind not in retain_kinds for f in scan_secrets(line)):
-        return True
-    return bool(scan_injection(line))
+    if cache is not None and line in cache:
+        return cache[line]
+    flagged = bool(scan_secrets(line)) or bool(scan_injection(line))
+    if cache is not None:
+        cache[line] = flagged
+    return flagged
 
 
-# Headings are metadata, so they get the strict rule: any finding at all,
-# including the kinds that are kept in body text, withholds the heading.
-_STRICT: frozenset[str] = frozenset()
+def _first_line_is_flagged(rec, cache: dict[str, bool]) -> bool:
+    """The record's own findings decide first: they come from the run's
+    configured patterns (the injection seeds file), which a re-scan of the
+    line does not know. The line scan is the second opinion."""
+    first = rec.text.splitlines()[0] if rec.text else ""
+    for f in list(rec.secret_findings or []) + list(rec.injection_findings or []):
+        if f.start <= len(first):
+            return True
+    return _line_is_flagged(first, cache)
 
 
-def _safe_heading_path(path, withheld: set[str]) -> str:
+def _safe_heading_path(path, withheld: set[str], cache: dict[str, bool]) -> str:
     return " / ".join(
-        REDACTED_HEADING if (str(h) in withheld or _line_is_flagged(str(h), _STRICT))
+        REDACTED_HEADING if (str(h) in withheld or _line_is_flagged(str(h), cache))
         else str(h)
         for h in (path or ())
     )
 
 
-def _withheld_titles(records) -> set[str]:
+def _withheld_titles(records, cache: dict[str, bool]) -> set[str]:
     """Titles whose own heading line is flagged. The title is the line with its
     markers stripped, and the stripped form can fall under a pattern's minimum
     length while the raw line does not — so the raw line decides."""
@@ -165,7 +172,7 @@ def _withheld_titles(records) -> set[str]:
         if not path or not rec.text:
             continue
         first = rec.text.splitlines()[0]
-        if _HEADING_RE.match(first) and _line_is_flagged(first, _STRICT):
+        if _HEADING_RE.match(first) and _first_line_is_flagged(rec, cache):
             out.add(str(path[-1]))
     return out
 
@@ -254,7 +261,8 @@ def rebuild_bytes(
         doc = src.read_text(encoding="utf-8")
         recs = sorted(by_doc.get(entry["document_id"], []), key=lambda r: r.segment.source_span.start)
         pieces, cursor, n = [], 0, len(doc)
-        withheld = _withheld_titles(recs)
+        cache: dict[str, bool] = {}
+        withheld = _withheld_titles(recs, cache)
         for rec in recs:
             sp = rec.segment.source_span
             s, e = sp.start, sp.end
@@ -262,12 +270,12 @@ def rebuild_bytes(
                 raise RuntimeError(f"span verification failed for {rec.segment.segment_id} [{s}:{e}] of {n}")
             klass, reason = _classify(rec, retain_kinds)
             item = {"input": name, "segment": rec.segment.segment_id,
-                    "heading": _safe_heading_path(rec.segment.heading_path, withheld),
+                    "heading": _safe_heading_path(rec.segment.heading_path, withheld, cache),
                     "reason": reason}
             pieces.append(doc[cursor:s])
             if klass == "exclude":
                 first = rec.text.splitlines()[0] if rec.text else ""
-                keep_heading = bool(_HEADING_RE.match(first)) and not _line_is_flagged(first, _STRICT)
+                keep_heading = bool(_HEADING_RE.match(first)) and not _first_line_is_flagged(rec, cache)
                 pieces.append((first + "\n\n" + placeholder) if keep_heading else placeholder)
                 out.excluded.append(item)
             else:
