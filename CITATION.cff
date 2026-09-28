@@ -15,7 +15,7 @@ abstract: >-
 repository-code: "https://github.com/mobius-style/rcgov"
 url: "https://github.com/mobius-style/rcgov"
 license: AGPL-3.0-or-later
-version: 0.2.0
+version: 0.2.1
 keywords:
   - context-governance
   - semantic-hygiene

@@ -279,6 +279,136 @@ Part of the [MOBIUS](https://github.com/mobius-style) program — local-first, A
 - [infinity](https://github.com/mobius-style/infinity) — composite capstone (MMV × RQA) with an OpenAI-compatible API
 - [tokyo-insight](https://github.com/mobius-style/tokyo-insight) — on-demand civic-RAG engine for 東京都議会 deliberation records (engine + facts only)
 
+## Incident report — labelled secrets survived the rebuild (fixed in 0.2.1, 2026-09-29)
+
+Two defects, both found by an inventory of the products that call rcgov and
+confirmed by an adversarial review before release.
+
+**1. AWS secret access keys and `sk-` API keys had no named pattern.** In
+`aws_secret_access_key = …` the word `secret` is followed by `_access_key`, not
+by `=`, so the assignment pattern did not match; `sk-…` keys had no pattern at
+all. Both reached only the entropy backstop (`high_entropy_token`), which
+`rebuild_bytes` keeps by default because it also fires on hashes, ids and
+paths. A labelled secret therefore came back verbatim.
+
+**2. A secret on a `#` line survived even when it was detected.** An excised
+segment keeps its first line as a heading, and the segmenter treats every line
+starting with `# ` as a heading — including `# AWS_SECRET_ACCESS_KEY=…` in a
+`.env` file or a commented-out key inside a code fence. That line was copied
+through, and repeated in `excluded[].heading`. This applied to every kind,
+including the ones that were already detected.
+
+Since 0.2.1: named kinds for AWS secret keys (label and value may be separated
+by spaces, backticks, a table bar, a full-width colon, `=>`, or XML tags),
+`sk-`/`gsk_` keys, Hugging Face, Google, GitLab, GitHub (all prefixes), Stripe,
+JWTs, Slack webhooks, bearer tokens, Azure account keys, URL credentials, and
+key names the old assignment pattern could not reach; prefixes are matched
+after CJK text as well. `private_key_block` was widened from RSA / EC /
+OPENSSH to any `BEGIN … PRIVATE KEY` header (DSA, ENCRYPTED, PGP). A heading
+line that is itself flagged is replaced by the placeholder and withheld from
+`excluded[].heading`. Headings get a stricter rule than body text: any
+finding at all, including a bare high-entropy token, withholds the heading of
+an excised segment.
+
+Independent reviews ran before release, on random strings of the right shape
+(never real credentials), and each of the first five refused it:
+
+1. The first draft let 39 of 75 secret-bearing document forms through.
+2. The second ran in quadratic time on `token=token=…` (79 s for 200 KB),
+   required a digit in every value and so missed letters-only `hf_` tokens,
+   and removed identifiers such as `settings_production_secret_key_v2`.
+3. The third was still quadratic on `eyJ-eyJ-…` (the JWT pattern, 7 s for
+   200 KB) and on a page dense with tokens (the backstop's span check),
+   removed `AccessKeyCredentialProvider1`, and missed a third of the short
+   `sk-` keys whose body is broken by `-` or `_`.
+
+4. The fourth found `rebuild_bytes` ten times slower than 0.2.0 under a long
+   parent heading (each child re-scanned it), a flagged heading whose title
+   still reached `excluded[].heading` (`# password: <7 chars>#`), and — in
+   0.2.0 as well — a heading pattern that took two minutes on one 4 KB line
+   (`# x<spaces>y`).
+
+5. The fifth found that a heading flagged only by a seed from
+   `config/injection_seeds.yaml` (`## from now on you will act as`) was still
+   copied through, because the heading was re-scanned without the seed file.
+   The record's own findings now decide.
+
+All of these are fixed and under test. Measured on the released code, on one
+machine: every adversarial shape from the reviews scans 2 MB in under 2 s and
+doubles with the input. Against 0.2.0 on the same 147 shapes the scan is
+slower on most — the median is about 4 times, the worst 44 times
+(0.018 s → 0.79 s) — and faster on the dense ones where 0.2.0 was itself
+quadratic (80 s → 1.9 s). `rebuild_bytes` end to end is about 2 times slower
+than 0.2.0 on prose and up to about 4.6 times on input that is mostly
+heading text, because headings are scanned again (one 2 MB heading line:
+0.65 s → 2.9 s); it grows linearly wherever 0.2.0 does. Of 70 realistic value shapes × 200 random values, all
+detect at 98 % or more except the limits listed below; over 32,166 local
+files (179 M characters of code, configuration and prose) the new kinds fire
+16 times, all on token-shaped values. These measurements are not in the
+repository; the reproducers are, in `tests/test_scan.py` and
+`tests/test_rebuild.py`. Of the five patterns in 0.2.0, four are byte-for-byte
+unchanged; `private_key_block` is the widened one.
+
+Forms that still survive, listed so nobody has to find them again:
+
+- a 40-character string with no label, or with the label more than 24
+  characters away, in a table's header row or a CSV header, or on the
+  previous line (`Secret access key:` then the value; the snake_case and
+  CamelCase labels followed by `:` are caught across the line break);
+- a value that reads like words: a digits-only value, one case of letters up
+  to 24 long, or camelCase — behind a vendor prefix, or behind a label that
+  only the new pattern reaches (`secret_key`, `access_key`, `private_key`,
+  quoted labels). Behind `token` / `password` / `secret` / `api_key` with `:`
+  or `=` the 0.2.0 pattern still catches it. Real vendor tokens are not
+  shaped like this; a hand-made one may be;
+- a JWT with a header or payload segment shorter than 13 characters (`eyJ`
+  and fewer than 10 more), and a token split by markdown emphasis;
+- a value followed directly by `.` and a letter;
+- a prefix glued to a preceding letter, including the `n` of an escaped `\n`
+  in a JSON string;
+- a YAML folded scalar, a base64-wrapped key, a passphrase written as prose;
+- **passwords and symbol-bearing keys.** A value behind any label
+  (`password`, `passwd`, `secret_key`, …) that is shorter than 16 characters
+  behind a quoted label, or that contains characters outside
+  `A–Z a–z 0–9 / + _ - ~` (Django's `SECRET_KEY`, most generated passwords),
+  is caught only when the 0.2.0 assignment pattern catches it, and then often
+  not over its full length;
+- in a URL: a password in a single character class (all lower-case letters),
+  and a token written as the user name (`https://<token>@host`);
+- kinds with no pattern, such as Stripe's `whsec_`.
+
+The long and random ones among these are still listed under `retained` as
+`high_entropy_token`. The others — short passwords, passwords with symbols,
+URL forms — are not listed anywhere: **rcgov is not a password scanner.**
+
+Known false positives of the new kinds, accepted: a hex digest behind a key
+label (`access_key: <sha1>`), documentation passwords in URLs
+(`user:p4ssw0rd@`, `:changeme123@`), and digit-and-letter placeholders behind
+a vendor prefix (`sk-1234567890abcdef…`), and some long identifiers behind a
+key label — with a digit inside, or camelCase made of short words
+(`private_key = Ed25519PrivateKeyParametersImplV2`, `GetCurrentKeySet`; 1.4 %
+of the 4,082 identifiers of 16 or more characters in the Python standard
+library). The segment is excised and listed in `excluded` with its reason.
+
+Not changed by this release: the files written under `workdir/out/`
+(`NON_INJECTION_REPORT.md`, `CLEAN_CONTEXT_PACK.md`) still print headings as
+they are, flagged or not, and the work directory holds a copy of the input.
+The fix covers what `rebuild_bytes` returns. Treat the work directory as
+sensitive as the input. A heading is withheld from the text when its line
+is flagged; a pattern that fires only on the stripped title (`# system: …`)
+withholds the title in `excluded[].heading` but leaves the line in the text.
+Also unchanged: input is read with universal
+newlines, so "byte-for-byte" holds for LF input and CRLF comes back as LF;
+and the pipeline's own cost grows faster than linearly with the number of
+segments (2 MB of tiny sections takes about a minute in both versions).
+
+What this does not change: detection is still pattern-based and English-centric
+for injection; a secret with no label and no known prefix is indistinguishable
+from a hash and is kept and listed, not removed; vendors' published example
+keys have the shape of real ones and are removed. **Products that carry their
+own copy of the rebuild step do not get fix 2 from upgrading rcgov** — they keep
+the heading line themselves. Call `rebuild_bytes` instead of copying it.
+
 ## Incident report — the Clean Context Pack is a triage, not a scrub (three downstream callers, fixed 2026-09-20)
 
 `govern_bytes()` returns `CLEAN_CONTEXT_PACK.md`: the segments the pipeline

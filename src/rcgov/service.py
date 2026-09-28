@@ -117,7 +117,64 @@ def _materialize(inputs: list[tuple[str, bytes]], workdir: str | Path | None) ->
 # confirmed secrets).
 RETAIN_KINDS: frozenset[str] = frozenset({"high_entropy_token"})
 EXCLUDED_PLACEHOLDER = "_[segment excluded by RCGov — see excluded]_\n"
+REDACTED_HEADING = "[heading withheld by RCGov]"
 _HEADING_RE = re.compile(r"^#{1,6}\s+\S")
+
+
+def _line_is_flagged(line: str, cache: dict[str, bool] | None = None) -> bool:
+    """True when a single line carries any secret finding or a built-in
+    injection pattern. A segment's first line is kept as its heading when the
+    segment is excised — but ``# AWS_SECRET_ACCESS_KEY=...`` in a .env file, a
+    commented key in a code fence, or a heading that quotes a key is also a
+    "heading". Until 0.2.1 such a line was copied through verbatim and
+    repeated in ``excluded[].heading``.
+
+    Headings are metadata, so the rule is strict: any finding at all,
+    including the kinds that are kept in body text, counts. ``cache`` lives
+    for one ``rebuild_bytes`` call: a heading is looked at once per descendant
+    segment, and a long parent heading over many children made the rebuild ten
+    times slower."""
+    from .scan import scan_injection, scan_secrets
+    if cache is not None and line in cache:
+        return cache[line]
+    flagged = bool(scan_secrets(line)) or bool(scan_injection(line))
+    if cache is not None:
+        cache[line] = flagged
+    return flagged
+
+
+def _first_line_is_flagged(rec, cache: dict[str, bool]) -> bool:
+    """The record's own findings decide first: they come from the run's
+    configured patterns (the injection seeds file), which a re-scan of the
+    line does not know. The line scan is the second opinion."""
+    first = rec.text.splitlines()[0] if rec.text else ""
+    for f in list(rec.secret_findings or []) + list(rec.injection_findings or []):
+        if f.start <= len(first):
+            return True
+    return _line_is_flagged(first, cache)
+
+
+def _safe_heading_path(path, withheld: set[str], cache: dict[str, bool]) -> str:
+    return " / ".join(
+        REDACTED_HEADING if (str(h) in withheld or _line_is_flagged(str(h), cache))
+        else str(h)
+        for h in (path or ())
+    )
+
+
+def _withheld_titles(records, cache: dict[str, bool]) -> set[str]:
+    """Titles whose own heading line is flagged. The title is the line with its
+    markers stripped, and the stripped form can fall under a pattern's minimum
+    length while the raw line does not — so the raw line decides."""
+    out: set[str] = set()
+    for rec in records:
+        path = rec.segment.heading_path
+        if not path or not rec.text:
+            continue
+        first = rec.text.splitlines()[0]
+        if _HEADING_RE.match(first) and _first_line_is_flagged(rec, cache):
+            out.add(str(path[-1]))
+    return out
 
 
 @dataclass
@@ -173,7 +230,8 @@ def rebuild_bytes(
     This is the call for "let the model read this text, minus what the scanner
     flagged". Kept segments are copied byte-for-byte from the input; segments
     with a confirmed secret kind, an injection pattern, or a quarantine gate are
-    replaced by ``placeholder`` (a leading heading line is preserved) and listed
+    replaced by ``placeholder`` (a leading heading line is preserved unless the
+    heading line itself is flagged) and listed
     in ``excluded`` with their reason; heuristic-only kinds in ``retain_kinds``
     are kept and listed in ``retained``. Every span is verified against the
     record's own text before it is trusted; a mismatch, or a manifest that
@@ -203,6 +261,8 @@ def rebuild_bytes(
         doc = src.read_text(encoding="utf-8")
         recs = sorted(by_doc.get(entry["document_id"], []), key=lambda r: r.segment.source_span.start)
         pieces, cursor, n = [], 0, len(doc)
+        cache: dict[str, bool] = {}
+        withheld = _withheld_titles(recs, cache)
         for rec in recs:
             sp = rec.segment.source_span
             s, e = sp.start, sp.end
@@ -210,11 +270,13 @@ def rebuild_bytes(
                 raise RuntimeError(f"span verification failed for {rec.segment.segment_id} [{s}:{e}] of {n}")
             klass, reason = _classify(rec, retain_kinds)
             item = {"input": name, "segment": rec.segment.segment_id,
-                    "heading": " / ".join(rec.segment.heading_path or ()), "reason": reason}
+                    "heading": _safe_heading_path(rec.segment.heading_path, withheld, cache),
+                    "reason": reason}
             pieces.append(doc[cursor:s])
             if klass == "exclude":
-                first, _nl, _rest = rec.text.partition("\n")
-                pieces.append((first + "\n\n" + placeholder) if _HEADING_RE.match(first) else placeholder)
+                first = rec.text.splitlines()[0] if rec.text else ""
+                keep_heading = bool(_HEADING_RE.match(first)) and not _first_line_is_flagged(rec, cache)
+                pieces.append((first + "\n\n" + placeholder) if keep_heading else placeholder)
                 out.excluded.append(item)
             else:
                 pieces.append(doc[s:e]); out.admitted += 1
