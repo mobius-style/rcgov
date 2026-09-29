@@ -306,9 +306,12 @@ key names the old assignment pattern could not reach; prefixes are matched
 after CJK text as well. `private_key_block` was widened from RSA / EC /
 OPENSSH to any `BEGIN … PRIVATE KEY` header (DSA, ENCRYPTED, PGP). A heading
 line that is itself flagged is replaced by the placeholder and withheld from
-`excluded[].heading`. Headings get a stricter rule than body text: any
-finding at all, including a bare high-entropy token, withholds the heading of
-an excised segment.
+`excluded[].heading`. The heading line of an excised segment gets a stricter
+rule than body text: any finding at all, including a bare high-entropy token,
+removes the line. In the `heading` metadata a title is withheld when its line
+was removed from the text or holds a confirmed kind; a title that stays in the
+text — a file path, a commit hash — is shown (0.2.3; 0.2.1 and 0.2.2 hid those
+too, which protected nothing and made the listing unreadable).
 
 Independent reviews ran before release, on random strings of the right shape
 (never real credentials), and each of the first five refused it:

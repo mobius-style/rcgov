@@ -218,3 +218,25 @@ def test_rebuild_records_refuses_a_document_the_records_were_not_cut_from(tmp_pa
                                store_dir=tmp_path / "store", commitments_path=None))
     with pytest.raises(RuntimeError):
         rebuild_records("# A\n\nbody two\n", list(res.governed))
+
+
+# --- 0.2.3: a title that stays in the text is shown in the metadata --------------
+
+def test_kept_heading_with_a_path_or_hash_is_shown_in_metadata(tmp_path):
+    bare = "x9Q2vLm8ZpR4tW7yB1nK3sD6fH0jA5cE7uIo"
+    doc = (f"# Report\n\nintro\n\n## build/{bare}/out.json\n\nplain result\n\n"
+           f"### detail\n\nkey {_SK}\n\n## Notes\n\nartifact {bare}\n")
+    r = rebuild_bytes([("d.md", doc.encode())], "summarise", workdir=tmp_path)
+    assert f"## build/{bare}/out.json" in r.joined() and _SK not in r.joined()
+    detail = [e for e in r.excluded if e["heading"].endswith("detail")]
+    assert detail and bare in detail[0]["heading"]          # the parent's line is in the text
+    assert any(bare not in e["heading"] and e["heading"].endswith("Notes") for e in r.retained)
+    assert all(_SK not in str(e) for e in r.excluded + r.retained)
+
+
+def test_title_of_a_removed_heading_line_is_still_withheld(tmp_path):
+    bare = "x9Q2vLm8ZpR4tW7yB1nK3sD6fH0jA5cE7uIo"
+    doc = f"# Report\n\nintro\n\n## run {bare}\n\nkey {_SK}\n\n### child\n\nplain\n"
+    r = rebuild_bytes([("d.md", doc.encode())], "summarise", workdir=tmp_path)
+    assert bare not in r.joined()
+    assert all(bare not in str(e) for e in r.excluded + r.retained)

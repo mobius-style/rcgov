@@ -121,6 +121,24 @@ REDACTED_HEADING = "[heading withheld by RCGov]"
 _HEADING_RE = re.compile(r"^#{1,6}\s+\S")
 
 
+def _line_is_confirmed(line: str, retain_kinds: frozenset[str],
+                       cache: dict[str, bool] | None = None) -> bool:
+    """True when a single line carries a confirmed secret kind (one not in
+    ``retain_kinds``) or a built-in injection pattern. Used for titles in
+    ``heading`` metadata: a title whose line stays in the text is shown even
+    if it holds a path or a hash — hiding it would protect nothing and make
+    the listing unreadable (0.2.2 hid them)."""
+    from .scan import scan_injection, scan_secrets
+    key = "\x00confirmed\x00" + line
+    if cache is not None and key in cache:
+        return cache[key]
+    flagged = (any(f.kind not in retain_kinds for f in scan_secrets(line))
+               or bool(scan_injection(line)))
+    if cache is not None:
+        cache[key] = flagged
+    return flagged
+
+
 def _line_is_flagged(line: str, cache: dict[str, bool] | None = None) -> bool:
     """True when a single line carries any secret finding or a built-in
     injection pattern. A segment's first line is kept as its heading when the
@@ -129,8 +147,9 @@ def _line_is_flagged(line: str, cache: dict[str, bool] | None = None) -> bool:
     "heading". Until 0.2.1 such a line was copied through verbatim and
     repeated in ``excluded[].heading``.
 
-    Headings are metadata, so the rule is strict: any finding at all,
-    including the kinds that are kept in body text, counts. ``cache`` lives
+    For the heading line of a segment that is being excised the rule is
+    strict: any finding at all, including the kinds that are kept in body
+    text, removes the line. ``cache`` lives
     for one ``rebuild_bytes`` call: a heading is looked at once per descendant
     segment, and a long parent heading over many children made the rebuild ten
     times slower."""
@@ -154,22 +173,28 @@ def _first_line_is_flagged(rec, cache: dict[str, bool]) -> bool:
     return _line_is_flagged(first, cache)
 
 
-def _safe_heading_path(path, withheld: set[str], cache: dict[str, bool]) -> str:
+def _safe_heading_path(path, withheld: set[str], cache: dict[str, bool],
+                       retain_kinds: frozenset[str] = RETAIN_KINDS) -> str:
     return " / ".join(
-        REDACTED_HEADING if (str(h) in withheld or _line_is_flagged(str(h), cache))
+        REDACTED_HEADING
+        if (str(h) in withheld or _line_is_confirmed(str(h), retain_kinds, cache))
         else str(h)
         for h in (path or ())
     )
 
 
-def _withheld_titles(records, cache: dict[str, bool]) -> set[str]:
-    """Titles whose own heading line is flagged. The title is the line with its
+def _withheld_titles(records, cache: dict[str, bool],
+                     retain_kinds: frozenset[str] = RETAIN_KINDS) -> set[str]:
+    """Titles whose heading line was removed from the text: the segment is
+    excised and its first line is flagged. The title is the line with its
     markers stripped, and the stripped form can fall under a pattern's minimum
     length while the raw line does not — so the raw line decides."""
     out: set[str] = set()
     for rec in records:
         path = rec.segment.heading_path
         if not path or not rec.text:
+            continue
+        if _classify(rec, retain_kinds)[0] != "exclude":
             continue
         first = rec.text.splitlines()[0]
         if _HEADING_RE.match(first) and _first_line_is_flagged(rec, cache):
@@ -242,7 +267,7 @@ def rebuild_records(
     retained: list[dict] = []
     admitted = 0
     cache: dict[str, bool] = {}
-    withheld = _withheld_titles(recs, cache)
+    withheld = _withheld_titles(recs, cache, retain_kinds)
     for rec in recs:
         sp = rec.segment.source_span
         s, e = sp.start, sp.end
@@ -250,7 +275,7 @@ def rebuild_records(
             raise RuntimeError(f"span verification failed for {rec.segment.segment_id} [{s}:{e}] of {n}")
         klass, reason = _classify(rec, retain_kinds)
         item = {"input": input_name, "segment": rec.segment.segment_id,
-                "heading": _safe_heading_path(rec.segment.heading_path, withheld, cache),
+                "heading": _safe_heading_path(rec.segment.heading_path, withheld, cache, retain_kinds),
                 "reason": reason}
         pieces.append(doc[cursor:s])
         if klass == "exclude":

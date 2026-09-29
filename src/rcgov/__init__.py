@@ -10,7 +10,7 @@ experimental profile, not a core claim. See ``docs/spec_v0_4.md``.
 """
 from __future__ import annotations
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 # The axiom this whole package serves (paper v0.7 §1):
 #     InjectContext_t => ContextReady_t
