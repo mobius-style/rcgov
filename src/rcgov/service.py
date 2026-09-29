@@ -19,7 +19,7 @@ from .contract import OUTPUT_FILES
 from .pipeline import RunConfig, run
 
 __all__ = ["GovernResult", "govern_bytes", "ARTIFACT_ORDER",
-           "RebuildResult", "rebuild_bytes", "RETAIN_KINDS", "EXCLUDED_PLACEHOLDER"]
+           "RebuildResult", "rebuild_bytes", "rebuild_records", "RETAIN_KINDS", "EXCLUDED_PLACEHOLDER"]
 
 # Display order for the UI (contract artifacts first, then dogfooding extras).
 ARTIFACT_ORDER = (
@@ -216,6 +216,57 @@ def _classify(rec, retain_kinds: frozenset[str]) -> tuple[str, str]:
     return "keep", ""
 
 
+def rebuild_records(
+    doc: str,
+    records,
+    *,
+    retain_kinds: frozenset[str] = RETAIN_KINDS,
+    placeholder: str = EXCLUDED_PLACEHOLDER,
+    input_name: str = "",
+) -> tuple[str, list[dict], list[dict], int]:
+    """Rebuild one document from its governance records. Returns
+    ``(text, excluded, retained, admitted)``.
+
+    This is the single implementation of the rebuild. :func:`rebuild_bytes`
+    calls it, and a caller that runs ``rcgov.pipeline.run`` itself (to keep its
+    own integrity checks or input wrapping) should call it too instead of
+    carrying a copy: until 0.2.1 every copy kept a flagged ``# KEY=…`` line as
+    the heading of the segment it had just excised.
+
+    ``doc`` is the text the records were cut from. Every span is verified
+    against the record's own text; a mismatch raises ``RuntimeError``.
+    """
+    recs = sorted(records, key=lambda r: r.segment.source_span.start)
+    pieces, cursor, n = [], 0, len(doc)
+    excluded: list[dict] = []
+    retained: list[dict] = []
+    admitted = 0
+    cache: dict[str, bool] = {}
+    withheld = _withheld_titles(recs, cache)
+    for rec in recs:
+        sp = rec.segment.source_span
+        s, e = sp.start, sp.end
+        if not (0 <= cursor <= s <= e <= n) or doc[s:e] != rec.text:
+            raise RuntimeError(f"span verification failed for {rec.segment.segment_id} [{s}:{e}] of {n}")
+        klass, reason = _classify(rec, retain_kinds)
+        item = {"input": input_name, "segment": rec.segment.segment_id,
+                "heading": _safe_heading_path(rec.segment.heading_path, withheld, cache),
+                "reason": reason}
+        pieces.append(doc[cursor:s])
+        if klass == "exclude":
+            first = rec.text.splitlines()[0] if rec.text else ""
+            keep_heading = bool(_HEADING_RE.match(first)) and not _first_line_is_flagged(rec, cache)
+            pieces.append((first + "\n\n" + placeholder) if keep_heading else placeholder)
+            excluded.append(item)
+        else:
+            pieces.append(doc[s:e]); admitted += 1
+            if klass == "retain":
+                retained.append(item)
+        cursor = e
+    pieces.append(doc[cursor:])
+    return "".join(pieces), excluded, retained, admitted
+
+
 def rebuild_bytes(
     inputs: list[tuple[str, bytes]],
     task: str,
@@ -259,30 +310,11 @@ def rebuild_bytes(
         src = Path(entry["source_path"])
         name = src.name
         doc = src.read_text(encoding="utf-8")
-        recs = sorted(by_doc.get(entry["document_id"], []), key=lambda r: r.segment.source_span.start)
-        pieces, cursor, n = [], 0, len(doc)
-        cache: dict[str, bool] = {}
-        withheld = _withheld_titles(recs, cache)
-        for rec in recs:
-            sp = rec.segment.source_span
-            s, e = sp.start, sp.end
-            if not (0 <= cursor <= s <= e <= n) or doc[s:e] != rec.text:
-                raise RuntimeError(f"span verification failed for {rec.segment.segment_id} [{s}:{e}] of {n}")
-            klass, reason = _classify(rec, retain_kinds)
-            item = {"input": name, "segment": rec.segment.segment_id,
-                    "heading": _safe_heading_path(rec.segment.heading_path, withheld, cache),
-                    "reason": reason}
-            pieces.append(doc[cursor:s])
-            if klass == "exclude":
-                first = rec.text.splitlines()[0] if rec.text else ""
-                keep_heading = bool(_HEADING_RE.match(first)) and not _first_line_is_flagged(rec, cache)
-                pieces.append((first + "\n\n" + placeholder) if keep_heading else placeholder)
-                out.excluded.append(item)
-            else:
-                pieces.append(doc[s:e]); out.admitted += 1
-                if klass == "retain":
-                    out.retained.append(item)
-            cursor = e
-        pieces.append(doc[cursor:])
-        out.text[name] = "".join(pieces)
+        text, excluded, retained, admitted = rebuild_records(
+            doc, by_doc.get(entry["document_id"], []), retain_kinds=retain_kinds,
+            placeholder=placeholder, input_name=name)
+        out.text[name] = text
+        out.excluded += excluded
+        out.retained += retained
+        out.admitted += admitted
     return out

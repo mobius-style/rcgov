@@ -407,7 +407,11 @@ for injection; a secret with no label and no known prefix is indistinguishable
 from a hash and is kept and listed, not removed; vendors' published example
 keys have the shape of real ones and are removed. **Products that carry their
 own copy of the rebuild step do not get fix 2 from upgrading rcgov** — they keep
-the heading line themselves. Call `rebuild_bytes` instead of copying it.
+the heading line themselves. Call `rebuild_bytes` instead of copying it — or,
+since 0.2.2, `rebuild_records(doc, records)` if you run `rcgov.pipeline.run`
+yourself to keep your own integrity checks or input wrapping. It is the one
+implementation `rebuild_bytes` itself uses; importing it fails on an rcgov
+older than 0.2.2, so a caller cannot fall back to the old behaviour unnoticed.
 
 ## Incident report — the Clean Context Pack is a triage, not a scrub (three downstream callers, fixed 2026-09-20)
 
