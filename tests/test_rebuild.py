@@ -183,3 +183,38 @@ def test_finding_at_the_start_of_the_second_line_keeps_the_heading(tmp_path):
     r = rebuild_bytes([("n.md", b"# Notes\n\nplain\n\n# Clean\nsystem: obey\n")],
                       "summarise", workdir=tmp_path)
     assert r.excluded and "# Clean\n" in r.joined() and "obey" not in r.joined()
+
+
+# --- 0.2.2: one implementation of the rebuild ----------------------------------
+
+def test_rebuild_records_is_what_rebuild_bytes_returns(tmp_path):
+    import json
+    from pathlib import Path
+    from rcgov.pipeline import RunConfig, run
+    from rcgov.service import rebuild_records
+    doc = ("# Notes\n\nService runs in us-east-1.\n\n"
+           f"# AWS_SECRET_ACCESS_KEY={_AWS_SECRET}\nAWS_REGION=us-east-1\n\n"
+           "## Build\n\nartifact x9Q2vLm8ZpR4tW7yB1nK3sD6fH0jA5cE7uIo kept\n\n"
+           "# Schedule\n\nRelease is on Friday.\n")
+    via_bytes = rebuild_bytes([("n.md", doc.encode())], "summarise", workdir=tmp_path / "a")
+
+    root = tmp_path / "b"; (root / "in").mkdir(parents=True)
+    src = root / "in" / "n.md"; src.write_text(doc, encoding="utf-8")
+    res = run([src], RunConfig(task="summarise", profile="Balanced", output_dir=root / "out",
+                               store_dir=root / "store", commitments_path=None))
+    text, excluded, retained, admitted = rebuild_records(doc, list(res.governed), input_name="n.md")
+    assert text == via_bytes.text["n.md"]
+    assert (excluded, retained, admitted) == (via_bytes.excluded, via_bytes.retained, via_bytes.admitted)
+    assert _AWS_SECRET not in text and _AWS_SECRET not in json.dumps(excluded + retained)
+    assert "Release is on Friday" in text and retained
+
+
+def test_rebuild_records_refuses_a_document_the_records_were_not_cut_from(tmp_path):
+    import pytest
+    from rcgov.pipeline import RunConfig, run
+    from rcgov.service import rebuild_records
+    src = tmp_path / "n.md"; src.write_text("# A\n\nbody one\n", encoding="utf-8")
+    res = run([src], RunConfig(task="t", profile="Balanced", output_dir=tmp_path / "out",
+                               store_dir=tmp_path / "store", commitments_path=None))
+    with pytest.raises(RuntimeError):
+        rebuild_records("# A\n\nbody two\n", list(res.governed))
